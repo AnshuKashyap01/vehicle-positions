@@ -13,7 +13,7 @@ sealed interface MapFileState {
 
     data class Ready(val file: File) : MapFileState
 
-    /** The first copy could not be fetched. The app tries again by itself. */
+    /** The first copy could not be fetched. When the app tries again depends on [reason]. */
     data class Failed(val reason: MapFailure) : MapFileState
 }
 

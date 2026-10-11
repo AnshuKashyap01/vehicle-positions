@@ -15,6 +15,7 @@ import android.os.SystemClock
 import android.text.TextPaint
 import android.text.TextUtils
 import android.util.TypedValue
+import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -184,9 +185,7 @@ fun RouteMap(geometry: TripGeometry, adherence: Adherence?, mapFile: MapFileStat
 private fun MapFileNote(state: MapFileState, modifier: Modifier = Modifier) {
     val text = when (state) {
         is MapFileState.Downloading -> stringResource(R.string.tracking_map_downloading, downloadPercent(state.bytes, state.total))
-        is MapFileState.Failed -> stringResource(
-            if (state.reason == MapFailure.NO_SPACE) R.string.tracking_map_no_space else R.string.tracking_map_retrying,
-        )
+        is MapFileState.Failed -> stringResource(mapFailureNote(state.reason))
         MapFileState.None, is MapFileState.Ready -> return
     }
     Surface(
@@ -197,6 +196,17 @@ private fun MapFileNote(state: MapFileState, modifier: Modifier = Modifier) {
     ) {
         Text(text, Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
     }
+}
+
+/**
+ * The note for a first copy that could not be fetched. Only a failure that can pass by itself
+ * says "will retry"; the rest need the driver or the agency to change something.
+ */
+@StringRes
+internal fun mapFailureNote(reason: MapFailure): Int = when (reason) {
+    MapFailure.NETWORK, MapFailure.UNEXPECTED -> R.string.tracking_map_retrying
+    MapFailure.NO_SPACE -> R.string.tracking_map_no_space
+    MapFailure.INVALID_FILE -> R.string.tracking_map_unusable
 }
 
 /**
