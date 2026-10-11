@@ -13,6 +13,10 @@ class MapFailureNoteTest {
         assertEquals(R.string.tracking_map_unusable, mapFailureNote(MapFailure.INVALID_FILE))
     }
 
+    @Test fun `a URL the phone refuses asks for https`() {
+        assertEquals(R.string.tracking_map_needs_https, mapFailureNote(MapFailure.CLEARTEXT_BLOCKED))
+    }
+
     @Test fun `only a failure that can pass by itself says it will retry`() {
         val retrying = MapFailure.entries.filter { mapFailureNote(it) == R.string.tracking_map_retrying }
 

@@ -383,6 +383,29 @@ class MapRepositoryTest {
         assertTrue(repository.state.value is MapFileState.Ready)
     }
 
+    // The phone refuses the URL the same way every time, so a timer would only ask the server
+    // again every few minutes for the whole shift.
+    @Test fun `plain http the phone refuses is said so, and tried at the next refresh, not on a timer`() = runTest {
+        setUp()
+        server.answers += MapServerAnswer.File("http://maps.example.org/agency.pmtiles")
+        fetcher.steps += fetcher.fail(MapFailure.CLEARTEXT_BLOCKED)
+        fetcher.steps += fetcher.complete(v1)
+        val repository = started()
+
+        repository.refresh()
+        advanceTimeBy(60 * 60_000L)
+
+        assertEquals(MapFileState.Failed(MapFailure.CLEARTEXT_BLOCKED), repository.state.value)
+        assertEquals("not retried on a timer", 1, server.askedAt.size)
+
+        // The agency moves the file to https.
+        repository.refresh()
+        settle()
+
+        assertEquals(url, fetcher.requests.last().url)
+        assertTrue(repository.state.value is MapFileState.Ready)
+    }
+
     // A directory where the record's temporary file goes makes every save fail, as a full phone
     // would. The failure must end the check, not escape the app's scope and crash the app: runTest
     // fails a test whose background coroutine throws.

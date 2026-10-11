@@ -27,6 +27,12 @@ enum class MapFailure {
     /** What the host sent is not a complete vector map file. */
     INVALID_FILE,
 
+    /**
+     * The URL, or one it redirects to, is plain http, and the phone will not send cleartext to its
+     * host: a release build refuses it for every host. Trying again cannot help.
+     */
+    CLEARTEXT_BLOCKED,
+
     /** Anything else, such as `map.json` failing to save. It is logged, and the next refresh tries again. */
     UNEXPECTED,
 }

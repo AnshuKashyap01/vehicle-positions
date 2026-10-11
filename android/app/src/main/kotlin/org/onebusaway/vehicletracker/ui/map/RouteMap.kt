@@ -207,6 +207,7 @@ internal fun mapFailureNote(reason: MapFailure): Int = when (reason) {
     MapFailure.NETWORK, MapFailure.UNEXPECTED -> R.string.tracking_map_retrying
     MapFailure.NO_SPACE -> R.string.tracking_map_no_space
     MapFailure.INVALID_FILE -> R.string.tracking_map_unusable
+    MapFailure.CLEARTEXT_BLOCKED -> R.string.tracking_map_needs_https
 }
 
 /**
