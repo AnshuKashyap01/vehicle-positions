@@ -2,6 +2,7 @@ package org.onebusaway.vehicletracker.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -24,9 +25,20 @@ data class ActiveTrip(
 
 interface TripStateStore {
     val activeTrip: Flow<ActiveTrip?>
+
+    /** The server id of a trip ended on this phone only, whose end the server has not confirmed. */
+    val unconfirmedEndTripDbId: Flow<Long?>
     val recentRoutes: Flow<List<String>>
     suspend fun saveActiveTrip(trip: ActiveTrip)
     suspend fun clearActiveTrip()
+
+    /**
+     * Clears the active trip but keeps its server id as [unconfirmedEndTripDbId], in one write so
+     * a crash between the two cannot lose it: the server keeps the trip open until it hears the
+     * end, and refuses every start until then.
+     */
+    suspend fun endActiveTripLocally()
+    suspend fun clearUnconfirmedEnd()
     suspend fun addRecentRoute(routeId: String)
 }
 
@@ -56,6 +68,7 @@ class DataStoreTripStateStore(
         val TRIP_ROUTE_ID = stringPreferencesKey("trip_route_id")
         val TRIP_START_DATE = stringPreferencesKey("trip_start_date")
         val TRIP_STARTED_AT = longPreferencesKey("trip_started_at")
+        val UNCONFIRMED_END_TRIP_DB_ID = longPreferencesKey("unconfirmed_end_trip_db_id")
         val RECENT_ROUTES = stringPreferencesKey("recent_routes")
 
         /** Written only by the build before the split; read once to restore an in-progress trip. */
@@ -85,6 +98,8 @@ class DataStoreTripStateStore(
         }
     }
 
+    override val unconfirmedEndTripDbId: Flow<Long?> = dataStore.data.map { it[Keys.UNCONFIRMED_END_TRIP_DB_ID] }
+
     override val recentRoutes: Flow<List<String>> = dataStore.data.map { prefs ->
         prefs[Keys.RECENT_ROUTES]?.split("|")?.filter { it.isNotEmpty() } ?: emptyList()
     }
@@ -101,15 +116,28 @@ class DataStoreTripStateStore(
     }
 
     override suspend fun clearActiveTrip() {
+        dataStore.edit { it.removeActiveTrip() }
+    }
+
+    override suspend fun endActiveTripLocally() {
         dataStore.edit { prefs ->
-            prefs.remove(Keys.TRIP_DB_ID)
-            prefs.remove(Keys.TRIP_GTFS_TRIP_ID)
-            prefs.remove(Keys.TRIP_VEHICLE_ID)
-            prefs.remove(Keys.TRIP_ROUTE_ID)
-            prefs.remove(Keys.TRIP_START_DATE)
-            prefs.remove(Keys.TRIP_STARTED_AT)
-            prefs.remove(Keys.LEGACY_LOCATION_TRIP_ID)
+            prefs[Keys.TRIP_DB_ID]?.let { prefs[Keys.UNCONFIRMED_END_TRIP_DB_ID] = it }
+            prefs.removeActiveTrip()
         }
+    }
+
+    override suspend fun clearUnconfirmedEnd() {
+        dataStore.edit { it.remove(Keys.UNCONFIRMED_END_TRIP_DB_ID) }
+    }
+
+    private fun MutablePreferences.removeActiveTrip() {
+        remove(Keys.TRIP_DB_ID)
+        remove(Keys.TRIP_GTFS_TRIP_ID)
+        remove(Keys.TRIP_VEHICLE_ID)
+        remove(Keys.TRIP_ROUTE_ID)
+        remove(Keys.TRIP_START_DATE)
+        remove(Keys.TRIP_STARTED_AT)
+        remove(Keys.LEGACY_LOCATION_TRIP_ID)
     }
 
     override suspend fun addRecentRoute(routeId: String) {

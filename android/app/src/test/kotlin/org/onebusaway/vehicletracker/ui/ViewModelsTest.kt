@@ -949,6 +949,8 @@ class ViewModelsTest {
             awaitCondition(description = "shift ended locally") { ended }
             assertTrue(!f.vm.uiState.value.endTripError)
             assertNull(f.tripState.tripState.value)
+            // The server still has it open, so its id is kept for the next start to end it.
+            assertEquals(t1Trip.tripDbId, f.tripState.unconfirmedEndState.value)
             assertNull(f.geometryStore.stored)
             assertEquals(1, f.serviceController.stopCount)
         }

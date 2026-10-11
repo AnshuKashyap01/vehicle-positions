@@ -101,6 +101,28 @@ class TripStateStoreTest {
         assertFalse(dataStore.data.first().contains(stringPreferencesKey("trip_location_id")))
     }
 
+    @Test fun `a trip ended on this phone keeps its server id until the end is confirmed`() = runTest {
+        val store = DataStoreTripStateStore(newDataStore(), nairobi)
+        store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L))
+
+        store.endActiveTripLocally()
+
+        assertNull(store.activeTrip.first())
+        assertEquals(7L, store.unconfirmedEndTripDbId.first())
+
+        store.clearUnconfirmedEnd()
+
+        assertNull(store.unconfirmedEndTripDbId.first())
+    }
+
+    @Test fun `ending locally with no stored trip leaves no end to send`() = runTest {
+        val store = DataStoreTripStateStore(newDataStore(), nairobi)
+
+        store.endActiveTripLocally()
+
+        assertNull(store.unconfirmedEndTripDbId.first())
+    }
+
     @Test fun `legacyGtfsTripId treats a copy of the route id as no trip id`() {
         assertEquals("", legacyGtfsTripId(legacy = "5", routeId = "5"))
         assertEquals("", legacyGtfsTripId(legacy = null, routeId = "5"))

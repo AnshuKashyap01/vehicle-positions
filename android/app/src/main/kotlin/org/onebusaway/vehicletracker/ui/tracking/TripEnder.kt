@@ -45,8 +45,9 @@ class TripEnder @Inject constructor(
         )
     }
 
+    /** The server still has the trip open; [TripRepository.start] sends its end before the next start. */
     suspend fun endLocally(onEnded: () -> Unit) {
-        tripStateStore.clearActiveTrip()
+        tripStateStore.endActiveTripLocally()
         tripGeometryStore.clear()
         serviceController.stopTracking()
         _state.value = EndTripState()

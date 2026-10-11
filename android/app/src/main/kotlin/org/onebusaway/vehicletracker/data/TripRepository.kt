@@ -2,10 +2,12 @@ package org.onebusaway.vehicletracker.data
 
 import android.util.Log
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.first
 import org.onebusaway.vehicletracker.data.api.EndTripRequest
 import org.onebusaway.vehicletracker.data.api.StartTripRequest
 import org.onebusaway.vehicletracker.data.api.TrackerApiProvider
 import org.onebusaway.vehicletracker.di.EpochSecondsClock
+import retrofit2.HttpException
 import javax.inject.Inject
 
 private const val TAG = "TripRepository"
@@ -34,6 +36,7 @@ class TripRepository @Inject constructor(
     ): Result<ActiveTrip> = try {
         val cleanedTripId = gtfsTripId.trim()
         val cleanedRouteId = routeId.trim()
+        endUnconfirmedTrip()
         val trip = apiProvider.get().startTrip(StartTripRequest(vehicleId, cleanedRouteId, cleanedTripId))
         val startedAt = clock()
         val activeTrip = ActiveTrip(
@@ -64,6 +67,22 @@ class TripRepository @Inject constructor(
         throw e
     } catch (e: Exception) {
         Result.failure(mapHttpError(e))
+    }
+
+    /**
+     * Sends the end of a trip the driver ended on this phone only: the server still has it open,
+     * and refuses every start until it hears. If this fails the start fails too, as it would have
+     * been refused anyway. A 404 means the server has no open trip of this driver's under that id,
+     * which is what the end was for; usually an earlier end got through and only its reply was lost.
+     */
+    private suspend fun endUnconfirmedTrip() {
+        val tripDbId = tripStateStore.unconfirmedEndTripDbId.first() ?: return
+        try {
+            apiProvider.get().endTrip(EndTripRequest(tripDbId))
+        } catch (e: HttpException) {
+            if (e.code() != 404) throw e
+        }
+        tripStateStore.clearUnconfirmedEnd()
     }
 }
 

@@ -130,6 +130,58 @@ class RepositoriesTest {
         server.shutdown()
     }
 
+    private val startedTrip9 =
+        """{"id":9,"user_id":1,"vehicle_id":"bus-1","route_id":"5","gtfs_trip_id":"","start_time":"2026-08-04T08:30:00Z","status":"active"}"""
+
+    @Test fun `trip start first ends the trip that was ended on this phone only`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setBody("""{"status":"trip ended"}"""))
+        server.enqueue(MockResponse().setResponseCode(201).setBody(startedTrip9))
+        val store = FakeTripStateStore().apply { unconfirmedEndState.value = 7L }
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 500L })
+
+        assertTrue(repo.start("bus-1", "5", "", "20260804").isSuccess)
+
+        val end = server.takeRequest()
+        assertEquals("/api/v1/trips/end", end.path)
+        assertEquals("7", Json.parseToJsonElement(end.body.readUtf8()).jsonObject["trip_id"]!!.jsonPrimitive.content)
+        assertEquals("/api/v1/trips/start", server.takeRequest().path)
+        assertNull(store.unconfirmedEndTripDbId.first())
+        assertEquals(9L, store.activeTrip.first()?.tripDbId)
+        server.shutdown()
+    }
+
+    @Test fun `trip start goes ahead when the server has no open trip to end`() = runTest {
+        val server = MockWebServer().apply { start() }
+        // The earlier end got through and only its response was lost.
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"active trip not found"}"""))
+        server.enqueue(MockResponse().setResponseCode(201).setBody(startedTrip9))
+        val store = FakeTripStateStore().apply { unconfirmedEndState.value = 7L }
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 500L })
+
+        assertTrue(repo.start("bus-1", "5", "", "20260804").isSuccess)
+
+        assertNull(store.unconfirmedEndTripDbId.first())
+        assertEquals(9L, store.activeTrip.first()?.tripDbId)
+        server.shutdown()
+    }
+
+    @Test fun `trip start whose leftover end fails starts nothing and keeps the trip id`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"failed to end trip"}"""))
+        server.enqueue(MockResponse().setResponseCode(201).setBody(startedTrip9))
+        val store = FakeTripStateStore().apply { unconfirmedEndState.value = 7L }
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 500L })
+
+        val result = repo.start("bus-1", "5", "", "20260804")
+
+        assertTrue(result.exceptionOrNull() is ApiError.Other)
+        assertEquals(1, server.requestCount)
+        assertEquals(7L, store.unconfirmedEndTripDbId.first())
+        assertNull(store.activeTrip.first())
+        server.shutdown()
+    }
+
     @Test fun `trip start records the vehicle as recently used`() = runTest {
         val server = MockWebServer().apply { start() }
         server.enqueue(MockResponse().setResponseCode(201).setBody(
