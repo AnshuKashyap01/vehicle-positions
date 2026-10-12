@@ -962,7 +962,11 @@ to the file's URL and restart the server.
 **What phones do.** Once the driver has signed in, the app downloads the file
 in the background, on any connection, and shows "Downloading map" on the
 Tracking screen until it is done. It needs the file's size plus 50 MB free, and
-says so when the phone is too full. Once a day it asks your host whether the
+says so when the phone is too full. It also says so when the URL is plain
+`http`, which phones refuse, or what it serves is not a whole PMTiles vector
+file. Phones try a corrected URL the next time the app comes to the front, and
+a corrected file at the same URL within a day.
+Once a day it asks your host whether the
 file has changed. To update the map, replace the file at the same URL: within a
 day phones fetch the new version quietly and show it the next time the Tracking
 screen opens. To drop the map, unset `MAP_PMTILES_URL`: within a day phones

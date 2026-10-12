@@ -102,6 +102,10 @@
     <string name="tracking_map_downloading">Downloading map, %1$d%%</string>
     <string name="tracking_map_no_space">Not enough space for the map</string>
     <string name="tracking_map_retrying">Map not downloaded yet, will retry</string>
+    <!-- The map URL gives something that is not a map. The app leaves that URL alone for a day. -->
+    <string name="tracking_map_unusable">Map file is not usable, tell your agency</string>
+    <!-- The map URL is plain http, which the phone refuses. The app tries again only when it next comes to the front. -->
+    <string name="tracking_map_needs_https">Map link must use https, tell your agency</string>
 
     <!-- Resume prompt: a trip was stored but its tracking service was not running at launch -->
     <string name="resume_title">Resume Shift?</string>

@@ -17,6 +17,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.RandomAccessFile
+import java.net.UnknownServiceException
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.file.Files
@@ -77,7 +78,7 @@ fun interface MapFileFetcher {
 }
 
 /**
- * Downloads a PMTiles file over plain HTTP from wherever the agency hosts it.
+ * Downloads a PMTiles file over HTTP from wherever the agency hosts it.
  *
  * A broken download carries on from where it stopped: the bytes collect in a part file, and the
  * next try asks for the rest with `Range`, guarded by `If-Range` so that a file replaced in
@@ -108,6 +109,10 @@ class MapFileDownloader(
                 }
                 is Attempt.Done -> first.result
             }
+        } catch (e: UnknownServiceException) {
+            // OkHttp's refusal, before it connects, to send plain http the network security policy
+            // blocks. Nothing else throws it for this client on Android 8 and up.
+            FetchResult.Failed(MapFailure.CLEARTEXT_BLOCKED)
         } catch (e: IOException) {
             // The part keeps what arrived, for the next try to carry on from.
             FetchResult.Failed(MapFailure.NETWORK)

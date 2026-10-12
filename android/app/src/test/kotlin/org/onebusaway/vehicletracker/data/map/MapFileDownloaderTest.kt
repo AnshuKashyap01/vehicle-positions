@@ -6,6 +6,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import okhttp3.ConnectionSpec
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
@@ -321,6 +322,18 @@ class MapFileDownloaderTest {
         server.shutdown()
 
         assertEquals(FetchResult.Failed(MapFailure.NETWORK), fetch())
+    }
+
+    // A release build refuses plain http to every host, and OkHttp throws before it connects. The
+    // JVM refuses nothing, so a client without cleartext stands in: it fails in the same spot, with
+    // the same exception.
+    @Test fun `plain http the phone refuses is not a network failure`() = runTest {
+        val noCleartext = MapFileDownloader.client().newBuilder().connectionSpecs(listOf(ConnectionSpec.MODERN_TLS)).build()
+
+        val result = fetch(downloader = MapFileDownloader(noCleartext, freeSpace = { Long.MAX_VALUE }))
+
+        assertEquals(FetchResult.Failed(MapFailure.CLEARTEXT_BLOCKED), result)
+        assertEquals("refused before it connects", 0, server.requestCount)
     }
 }
 

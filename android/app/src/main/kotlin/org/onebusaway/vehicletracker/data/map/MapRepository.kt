@@ -149,7 +149,7 @@ class MapRepository @Inject constructor(
                         store.save(store.load().copy(pending = null, rejected = RejectedMap(url, result.version ?: FileVersion(), now())))
                         failed(MapFailure.INVALID_FILE, retry = false)
                     }
-                    MapFailure.NO_SPACE, MapFailure.UNEXPECTED -> failed(result.reason, retry = false)
+                    MapFailure.NO_SPACE, MapFailure.CLEARTEXT_BLOCKED, MapFailure.UNEXPECTED -> failed(result.reason, retry = false)
                     MapFailure.NETWORK -> failed(MapFailure.NETWORK)
                 }
             }
