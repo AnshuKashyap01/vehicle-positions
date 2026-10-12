@@ -344,9 +344,10 @@ stop location tracking and mark the trip as complete."). Tracking stops, the
 notification disappears, and the vehicle drops out of the feed once its last
 report ages past the staleness threshold. If the server cannot be reached at
 that moment the app offers **Could not end trip** with **Retry** and **End
-Locally** — **End Locally** stops the phone but leaves the trip showing as
-**Active** on your **Trips** page, so ask the driver to reopen the app and end
-it properly when they are back on the network.
+Locally**. **End Locally** stops the phone at once, but the trip stays
+**Active** on your **Trips** page until the driver starts their next trip: the
+app sends the end just before that start, so the trip's end time shows when the
+next one began, not when the run finished.
 
 Teach every driver the same three habits: start the trip before pulling out,
 check the banner is green, and end the trip when the run finishes.
@@ -528,7 +529,7 @@ points are.
 | Symptom | Likely cause | What to do |
 |---|---|---|
 | Driver sees **You are not assigned to this vehicle.** after tapping a run on **Select a Run** | The vehicle is not assigned to that driver, or the assignment was removed. | **Users** → **Edit** the driver → **Assigned vehicles** → pick the vehicle → **Assign**. Then have them tap the run again. |
-| Driver sees **You already have an active trip.** | An earlier trip was never ended — usually **End Locally** after a network problem, or the app was reinstalled. | Have the driver reopen the app; it returns to the tracking screen for the old trip, where **End Trip** ends it. Confirm on **Trips** → **Active** that it is gone. If the app no longer knows about the trip, ask your IT contact — there is no button in the admin UI to end another person's trip. |
+| Driver sees **You already have an active trip.** | An earlier trip was never ended, usually because it was started on another phone or the app was reinstalled. | Have the driver open the app on the phone that started the trip; it returns to the tracking screen for the old trip, where **End Trip** ends it. Confirm on **Trips** → **Active** that it is gone. If the app no longer knows about the trip, ask your IT contact — there is no button in the admin UI to end another person's trip. |
 | Driver sees **No vehicles are assigned to you.** | No active vehicle is assigned to that account. | Check the vehicle is not deactivated (**Vehicles** → **Show deactivated**), then assign it (section 6). |
 | One vehicle missing from the feed and the map, others fine | That phone has stopped reporting for longer than the staleness threshold: no signal, app closed, trip never started, phone battery dead, or Android killed the app in the background. | Ask the driver what the status banner says. **No connection** is a coverage problem and clears itself. If the app is not on the tracking screen at all, the trip was never started or was ended. If it keeps dying when the screen locks, the background-location permission is not **"Allow all the time"** — redo step 6 of section 7. |
 | Feed completely empty during service hours | Nothing is reporting, or the server lost its database. | Check **Dashboard**: if **Feed last updated** says **never** (nothing has reported for several minutes) and **Active Trips** is 0, it is the phones — start with two or three drivers. If **Active Trips** is healthy but nothing is in the feed, contact IT: see the monitoring checks in [`deployment.md` §9](deployment.md#9-monitoring). |

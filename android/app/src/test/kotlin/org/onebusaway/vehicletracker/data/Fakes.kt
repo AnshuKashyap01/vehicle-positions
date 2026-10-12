@@ -59,10 +59,17 @@ class FakeSessionStore : SessionStore {
 class FakeTripStateStore : TripStateStore {
     val tripState = MutableStateFlow<ActiveTrip?>(null)
     val routesState = MutableStateFlow<List<String>>(emptyList())
+    val unconfirmedEndState = MutableStateFlow<Long?>(null)
     override val activeTrip = tripState
+    override val unconfirmedEndTripDbId = unconfirmedEndState
     override val recentRoutes = routesState
     override suspend fun saveActiveTrip(trip: ActiveTrip) { tripState.value = trip }
     override suspend fun clearActiveTrip() { tripState.value = null }
+    override suspend fun endActiveTripLocally() {
+        tripState.value?.let { unconfirmedEndState.value = it.tripDbId }
+        tripState.value = null
+    }
+    override suspend fun clearUnconfirmedEnd() { unconfirmedEndState.value = null }
     override suspend fun addRecentRoute(routeId: String) {
         routesState.value = (listOf(routeId) + routesState.value.filter { it != routeId }).take(5)
     }
