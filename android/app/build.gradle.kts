@@ -1,6 +1,5 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.ksp)
@@ -9,7 +8,7 @@ plugins {
 
 android {
     namespace = "org.onebusaway.vehicletracker"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "org.onebusaway.vehicletracker"
@@ -33,11 +32,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
-    sourceSets["main"].kotlin.srcDir("src/main/kotlin")
-    sourceSets["test"].kotlin.srcDir("src/test/kotlin")
-    sourceSets["androidTest"].kotlin.srcDir("src/androidTest/kotlin")
     testOptions.unitTests.isReturnDefaultValues = true
     // MapAssetsTest reads the committed map assets from disk, so a change to them has to rerun it.
     testOptions.unitTests.all { it.inputs.dir("src/main/assets/map") }
