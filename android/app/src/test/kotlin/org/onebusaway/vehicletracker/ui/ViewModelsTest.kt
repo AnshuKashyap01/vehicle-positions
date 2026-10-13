@@ -470,14 +470,15 @@ class ViewModelsTest {
 
     /**
      * Builds a [RunsViewModel] over a `MockWebServer` answering the trips call with [tripsBody],
-     * every geometry fetch with [geometry], and each start with the next of [startResponses],
-     * loads route R1 at wall-clock time [now], and runs [block] against it.
+     * every geometry fetch with [geometry], each start with the next of [startResponses], and
+     * every end with [endResponse], loads route R1 at wall-clock time [now], and runs [block] against it.
      */
     private fun withRunsViewModel(
         tripsBody: String = twoRunsJson,
         now: String = "2026-09-22T08:05:00-07:00",
         geometry: () -> MockResponse = { MockResponse().setBody(t1GeometryJson) },
         startResponses: List<MockResponse> = emptyList(),
+        endResponse: () -> MockResponse = { MockResponse().setBody("""{"status":"trip ended"}""") },
         geometryStore: TripGeometryStore = FakeTripGeometryStore(),
         block: (RunsViewModel, MockWebServer, FakeServiceController, FakeTripStateStore) -> Unit,
     ) {
@@ -488,6 +489,7 @@ class ViewModelsTest {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when {
                 request.path == "/api/v1/trips/start" -> starts.poll() ?: MockResponse().setResponseCode(500)
+                request.path == "/api/v1/trips/end" -> endResponse()
                 request.path.orEmpty().startsWith("/api/v1/gtfs/trips/") -> geometry()
                 else -> MockResponse().setBody(tripsBody)
             }
@@ -611,6 +613,18 @@ class ViewModelsTest {
 
             vm.onStartRun("T1") { }
             awaitCondition(description = "409 surfaced") { loadedRuns(vm).error == TripError.TRIP_ACTIVE }
+            assertEquals(0, serviceController.startCount)
+        }
+    }
+
+    @Test fun `a leftover end that fails is reported as the previous trip, not this one`() = runTest(dispatcher) {
+        val refused = { MockResponse().setResponseCode(500).setBody("""{"error":"failed to end trip"}""") }
+        withRunsViewModel(endResponse = refused) { vm, server, serviceController, tripState ->
+            tripState.unconfirmedEndState.value = 7L
+            vm.onStartRun("T1") { fail("nothing may start while the previous trip is open") }
+            awaitCondition(description = "start failure surfaced") { loadedRuns(vm).error != null }
+
+            assertEquals(TripError.PREVIOUS_TRIP_NOT_ENDED, loadedRuns(vm).error)
             assertEquals(0, serviceController.startCount)
         }
     }

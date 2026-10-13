@@ -200,7 +200,7 @@ class RepositoriesTest {
 
         val result = repo.start("bus-1", "5", "", "20260804")
 
-        assertTrue(result.exceptionOrNull() is ApiError.Other)
+        assertTrue(result.exceptionOrNull() is ApiError.PreviousTripNotEnded)
         assertEquals(1, server.requestCount)
         assertEquals(7L, store.unconfirmedEndTripDbId.first())
         assertNull(store.activeTrip.first())

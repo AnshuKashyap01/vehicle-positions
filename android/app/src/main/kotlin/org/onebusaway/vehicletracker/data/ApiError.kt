@@ -23,6 +23,13 @@ sealed class ApiError : Exception() {
      */
     object TripNotActiveToday : ApiError()
 
+    /**
+     * The end of a trip ended on this phone only could not be sent before the next start. The
+     * server still has that trip open and would refuse the start, so the start is not sent, and
+     * the driver is told it is the previous trip that is stuck rather than this one.
+     */
+    object PreviousTripNotEnded : ApiError()
+
     data class Other(val msg: String) : ApiError()
 }
 

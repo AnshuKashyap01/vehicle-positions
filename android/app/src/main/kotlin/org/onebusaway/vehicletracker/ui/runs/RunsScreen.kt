@@ -215,6 +215,7 @@ private fun HighlightBadge(highlight: RunHighlight) {
 private fun runsErrorMessageRes(error: TripError): Int = when (error) {
     TripError.NOT_ASSIGNED -> R.string.runs_error_not_assigned
     TripError.TRIP_ACTIVE -> R.string.runs_error_trip_active
+    TripError.PREVIOUS_TRIP_NOT_ENDED -> R.string.runs_error_previous_trip_not_ended
     TripError.NETWORK -> R.string.runs_error_network
     TripError.NO_GEOMETRY -> R.string.runs_error_no_geometry
     TripError.TRIP_NOT_ACTIVE -> R.string.runs_error_trip_not_active

@@ -33,10 +33,19 @@ class TripRepository @Inject constructor(
         routeId: String,
         gtfsTripId: String,
         serviceDate: String,
+    ): Result<ActiveTrip> {
+        endUnconfirmedTrip().onFailure { return Result.failure(it) }
+        return startTrip(vehicleId, routeId, gtfsTripId, serviceDate)
+    }
+
+    private suspend fun startTrip(
+        vehicleId: String,
+        routeId: String,
+        gtfsTripId: String,
+        serviceDate: String,
     ): Result<ActiveTrip> = try {
         val cleanedTripId = gtfsTripId.trim()
         val cleanedRouteId = routeId.trim()
-        endUnconfirmedTrip()
         val trip = apiProvider.get().startTrip(StartTripRequest(vehicleId, cleanedRouteId, cleanedTripId))
         val startedAt = clock()
         val activeTrip = ActiveTrip(
@@ -72,12 +81,20 @@ class TripRepository @Inject constructor(
     /**
      * Sends the end of a trip the driver ended on this phone only: the server still has it open,
      * and refuses every start until it hears. If this fails the start fails too, as it would have
-     * been refused anyway.
+     * been refused anyway, with [ApiError.PreviousTripNotEnded] so the driver is told which trip
+     * is stuck.
      */
-    private suspend fun endUnconfirmedTrip() {
-        val tripDbId = tripStateStore.unconfirmedEndTripDbId.first() ?: return
-        sendEnd(tripDbId)
-        tripStateStore.clearUnconfirmedEnd()
+    private suspend fun endUnconfirmedTrip(): Result<Unit> = try {
+        tripStateStore.unconfirmedEndTripDbId.first()?.let { tripDbId ->
+            sendEnd(tripDbId)
+            tripStateStore.clearUnconfirmedEnd()
+        }
+        Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "Could not end the trip ended on this phone only", e)
+        Result.failure(ApiError.PreviousTripNotEnded)
     }
 
     /**
