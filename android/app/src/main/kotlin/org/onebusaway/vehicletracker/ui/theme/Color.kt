@@ -135,8 +135,9 @@ data class StatusColors(val onTime: StatusColor, val late: StatusColor, val earl
     }
 }
 
-// The design's card style 2a. The fills are the same in both themes and hold white text at 7:1, to be
-// read at a glance in sun. The light text tier is OneBusAway Android's, matched to iOS.
+// The text tier is OneBusAway Android's in both themes, which it took from iOS and adjusted to read as small
+// text. The fills are the design's card style 2a, the same in both themes and darker than OneBusAway's, so
+// white text on them is 7:1 and reads at a glance in sun.
 internal val LightStatusColors = StatusColors(
     onTime = StatusColor(fill = Color(0xFF006600), onFill = Color(0xFFFFFFFF), text = Color(0xFF0E7400)),
     late = StatusColor(fill = Color(0xFF0055B3), onFill = Color(0xFFFFFFFF), text = Color(0xFF0060C9)),
@@ -146,9 +147,9 @@ internal val LightStatusColors = StatusColors(
 
 internal val DarkStatusColors = StatusColors(
     onTime = LightStatusColors.onTime.copy(text = Color(0xFF30D158)),
-    late = LightStatusColors.late.copy(text = Color(0xFF6AB0FF)),
-    early = LightStatusColors.early.copy(text = Color(0xFFFF8A80)),
-    neutral = LightStatusColors.neutral.copy(text = Color(0xFFAEAEB2)),
+    late = LightStatusColors.late.copy(text = Color(0xFF0A8BFF)),
+    early = LightStatusColors.early.copy(text = Color(0xFFFF453A)),
+    neutral = LightStatusColors.neutral.copy(text = Color(0xFF8E8E93)),
 )
 
 /** A reporting problem (no network, no GPS): a calm dark line, because red already means early. */
