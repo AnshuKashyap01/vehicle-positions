@@ -17,9 +17,15 @@ class MapFailureNoteTest {
         assertEquals(R.string.tracking_map_needs_https, mapFailureNote(MapFailure.CLEARTEXT_BLOCKED))
     }
 
-    @Test fun `only a failure that can pass by itself says it will retry`() {
+    // An unexpected failure is not retried on a timer, only at the next refresh, and it happens on
+    // the phone, so the note neither promises a retry soon nor sends the driver to the agency.
+    @Test fun `an unexpected failure says it is tried again when the app is next opened`() {
+        assertEquals(R.string.tracking_map_retry_on_open, mapFailureNote(MapFailure.UNEXPECTED))
+    }
+
+    @Test fun `only a failure retried on a timer says it will retry`() {
         val retrying = MapFailure.entries.filter { mapFailureNote(it) == R.string.tracking_map_retrying }
 
-        assertEquals(setOf(MapFailure.NETWORK, MapFailure.UNEXPECTED), retrying.toSet())
+        assertEquals(setOf(MapFailure.NETWORK), retrying.toSet())
     }
 }
