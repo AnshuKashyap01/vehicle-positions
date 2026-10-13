@@ -60,7 +60,7 @@ class TripRepository @Inject constructor(
     }
 
     suspend fun end(tripDbId: Long): Result<Unit> = try {
-        apiProvider.get().endTrip(EndTripRequest(tripDbId))
+        sendEnd(tripDbId)
         tripStateStore.clearActiveTrip()
         Result.success(Unit)
     } catch (e: CancellationException) {
@@ -72,17 +72,24 @@ class TripRepository @Inject constructor(
     /**
      * Sends the end of a trip the driver ended on this phone only: the server still has it open,
      * and refuses every start until it hears. If this fails the start fails too, as it would have
-     * been refused anyway. A 404 means the server has no open trip of this driver's under that id,
-     * which is what the end was for; usually an earlier end got through and only its reply was lost.
+     * been refused anyway.
      */
     private suspend fun endUnconfirmedTrip() {
         val tripDbId = tripStateStore.unconfirmedEndTripDbId.first() ?: return
+        sendEnd(tripDbId)
+        tripStateStore.clearUnconfirmedEnd()
+    }
+
+    /**
+     * A 404 means the server has no open trip of this driver's under that id, which is what the
+     * end was for: usually an earlier end got through and only its reply was lost.
+     */
+    private suspend fun sendEnd(tripDbId: Long) {
         try {
             apiProvider.get().endTrip(EndTripRequest(tripDbId))
         } catch (e: HttpException) {
             if (e.code() != 404) throw e
         }
-        tripStateStore.clearUnconfirmedEnd()
     }
 }
 

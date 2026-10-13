@@ -130,6 +130,31 @@ class RepositoriesTest {
         server.shutdown()
     }
 
+    @Test fun `trip end treats a 404 as already ended`() = runTest {
+        val server = MockWebServer().apply { start() }
+        // Retry after an end whose reply was lost: the server has already closed the trip.
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"active trip not found"}"""))
+        val store = FakeTripStateStore()
+        store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L))
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 0L })
+
+        assertTrue(repo.end(7L).isSuccess)
+        assertNull(store.activeTrip.first())
+        server.shutdown()
+    }
+
+    @Test fun `trip end that fails keeps the active trip`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"failed to end trip"}"""))
+        val store = FakeTripStateStore()
+        store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L))
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 0L })
+
+        assertTrue(repo.end(7L).isFailure)
+        assertEquals(7L, store.activeTrip.first()?.tripDbId)
+        server.shutdown()
+    }
+
     private val startedTrip9 =
         """{"id":9,"user_id":1,"vehicle_id":"bus-1","route_id":"5","gtfs_trip_id":"","start_time":"2026-08-04T08:30:00Z","status":"active"}"""
 
