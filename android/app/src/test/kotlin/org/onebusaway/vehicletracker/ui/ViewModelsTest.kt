@@ -499,7 +499,7 @@ class ViewModelsTest {
             val nowEpochSec = OffsetDateTime.parse(now).toEpochSecond()
             val clock = { nowEpochSec }
             val tripState = FakeTripStateStore()
-            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), clock = clock)
+            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), FakeSessionStore(), clock = clock)
             val serviceController = FakeServiceController()
             // The nav graph's arguments, which is where the ViewModel reads them from — and it
             // loads off them in init, with no load() call from the screen.
@@ -620,7 +620,7 @@ class ViewModelsTest {
     @Test fun `a leftover end that fails is reported as the previous trip, not this one`() = runTest(dispatcher) {
         val refused = { MockResponse().setResponseCode(500).setBody("""{"error":"failed to end trip"}""") }
         withRunsViewModel(endResponse = refused) { vm, server, serviceController, tripState ->
-            tripState.unconfirmedEndState.value = 7L
+            tripState.unconfirmedEndState.value = UnconfirmedEnd(7L, null)
             vm.onStartRun("T1") { fail("nothing may start while the previous trip is open") }
             awaitCondition(description = "start failure surfaced") { loadedRuns(vm).error != null }
 
@@ -781,8 +781,8 @@ class ViewModelsTest {
             val tripState = FakeTripStateStore().apply { tripState.value = t1Trip }
             val tracking = TrackingRepository()
             val geometryStore = FakeTripGeometryStore().apply { stored = TripFixtures.t1 }
-            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), clock = { 0L })
-            val tripEnder = TripEnder(tripRepository, tripState, geometryStore, FakeServiceController())
+            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
+            val tripEnder = TripEnder(tripRepository, tripState, geometryStore, FakeServiceController(), FakeSessionStore())
             val vm = TrackingViewModel(tracking, tripState, tripEnder, mapFiles)
             awaitCondition(description = "active trip loaded") { vm.uiState.value.activeTrip != null }
             block(vm, tracking, geometryStore)
@@ -893,8 +893,8 @@ class ViewModelsTest {
             val tripState = FakeTripStateStore().apply { tripState.value = t1Trip }
             val geometryStore = FakeTripGeometryStore().apply { stored = TripFixtures.t1 }
             val serviceController = FakeServiceController()
-            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), clock = { 0L })
-            val tripEnder = TripEnder(tripRepository, tripState, geometryStore, serviceController)
+            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
+            val tripEnder = TripEnder(tripRepository, tripState, geometryStore, serviceController, signedInAs("2"))
             val now = t1Trip.startedAtEpochSec + 2 * 3600 + 5 * 60
             val vm = ResumeShiftViewModel(tripState, serviceController, tripEnder, clock = { now })
             awaitCondition(description = "stored trip loaded") { vm.uiState.value.trip != null }
@@ -963,8 +963,9 @@ class ViewModelsTest {
             awaitCondition(description = "shift ended locally") { ended }
             assertTrue(!f.vm.uiState.value.endTripError)
             assertNull(f.tripState.tripState.value)
-            // The server still has it open, so its id is kept for the next start to end it.
-            assertEquals(t1Trip.tripDbId, f.tripState.unconfirmedEndState.value)
+            // The server still has it open, so its id is kept for the next start to end it, with
+            // the driver it belongs to.
+            assertEquals(UnconfirmedEnd(t1Trip.tripDbId, "2"), f.tripState.unconfirmedEndState.value)
             assertNull(f.geometryStore.stored)
             assertEquals(1, f.serviceController.stopCount)
         }

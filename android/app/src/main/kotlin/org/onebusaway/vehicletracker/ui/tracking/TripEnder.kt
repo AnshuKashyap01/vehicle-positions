@@ -3,8 +3,10 @@ package org.onebusaway.vehicletracker.ui.tracking
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import org.onebusaway.vehicletracker.data.ActiveTrip
+import org.onebusaway.vehicletracker.data.SessionStore
 import org.onebusaway.vehicletracker.data.TripGeometryStore
 import org.onebusaway.vehicletracker.data.TripRepository
 import org.onebusaway.vehicletracker.data.TripStateStore
@@ -25,6 +27,7 @@ class TripEnder @Inject constructor(
     private val tripStateStore: TripStateStore,
     private val tripGeometryStore: TripGeometryStore,
     private val serviceController: ServiceController,
+    private val sessionStore: SessionStore,
 ) {
     private val _state = MutableStateFlow(EndTripState())
     val state: StateFlow<EndTripState> = _state.asStateFlow()
@@ -47,7 +50,7 @@ class TripEnder @Inject constructor(
 
     /** The server still has the trip open; [TripRepository.start] sends its end before the next start. */
     suspend fun endLocally(onEnded: () -> Unit) {
-        tripStateStore.endActiveTripLocally()
+        tripStateStore.endActiveTripLocally(sessionStore.session.first().driverId)
         tripGeometryStore.clear()
         serviceController.stopTracking()
         _state.value = EndTripState()

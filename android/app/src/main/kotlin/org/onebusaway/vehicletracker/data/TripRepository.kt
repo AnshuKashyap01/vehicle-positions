@@ -16,6 +16,7 @@ class TripRepository @Inject constructor(
     private val apiProvider: TrackerApiProvider,
     private val tripStateStore: TripStateStore,
     private val vehiclePrefsStore: VehiclePrefsStore,
+    private val sessionStore: SessionStore,
     @param:EpochSecondsClock private val clock: () -> Long,
 ) {
     /**
@@ -82,11 +83,13 @@ class TripRepository @Inject constructor(
      * Sends the end of a trip the driver ended on this phone only: the server still has it open,
      * and refuses every start until it hears. If this fails the start fails too, as it would have
      * been refused anyway, with [ApiError.PreviousTripNotEnded] so the driver is told which trip
-     * is stuck.
+     * is stuck. Another driver's end is left for them ([UnconfirmedEnd.belongsTo]): their open
+     * trip does not block this driver's start.
      */
     private suspend fun endUnconfirmedTrip(): Result<Unit> = try {
-        tripStateStore.unconfirmedEndTripDbId.first()?.let { tripDbId ->
-            sendEnd(tripDbId)
+        val pending = tripStateStore.unconfirmedEnd.first()
+        if (pending != null && pending.belongsTo(sessionStore.session.first().driverId)) {
+            sendEnd(pending.tripDbId)
             tripStateStore.clearUnconfirmedEnd()
         }
         Result.success(Unit)

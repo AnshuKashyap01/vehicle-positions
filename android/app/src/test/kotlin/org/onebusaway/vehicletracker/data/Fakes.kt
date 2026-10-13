@@ -6,6 +6,7 @@ import org.onebusaway.vehicletracker.data.map.MapFileState
 import org.onebusaway.vehicletracker.engine.TripGeometry
 import org.onebusaway.vehicletracker.service.ServiceController
 import java.security.GeneralSecurityException
+import java.util.Base64
 
 /**
  * Stands in for [KeystoreCryptor] so session and migration logic runs on the JVM, where CI
@@ -56,17 +57,26 @@ class FakeSessionStore : SessionStore {
     override suspend fun clearToken() { state.value = state.value.copy(token = null, issuedAtEpochSec = null) }
 }
 
+/** A token shaped like the server's JWT, carrying [sub]; the phone never checks its signature. */
+fun jwtFor(sub: String): String {
+    val encoder = Base64.getUrlEncoder().withoutPadding()
+    fun part(json: String) = encoder.encodeToString(json.toByteArray())
+    return part("""{"alg":"HS256","typ":"JWT"}""") + "." + part("""{"sub":"$sub","exp":4102444800}""") + ".signature"
+}
+
+fun signedInAs(sub: String) = FakeSessionStore().apply { state.value = Session("http://localhost/", jwtFor(sub), 0L) }
+
 class FakeTripStateStore : TripStateStore {
     val tripState = MutableStateFlow<ActiveTrip?>(null)
     val routesState = MutableStateFlow<List<String>>(emptyList())
-    val unconfirmedEndState = MutableStateFlow<Long?>(null)
+    val unconfirmedEndState = MutableStateFlow<UnconfirmedEnd?>(null)
     override val activeTrip = tripState
-    override val unconfirmedEndTripDbId = unconfirmedEndState
+    override val unconfirmedEnd = unconfirmedEndState
     override val recentRoutes = routesState
     override suspend fun saveActiveTrip(trip: ActiveTrip) { tripState.value = trip }
     override suspend fun clearActiveTrip() { tripState.value = null }
-    override suspend fun endActiveTripLocally() {
-        tripState.value?.let { unconfirmedEndState.value = it.tripDbId }
+    override suspend fun endActiveTripLocally(driverId: String?) {
+        tripState.value?.let { unconfirmedEndState.value = UnconfirmedEnd(it.tripDbId, driverId) }
         tripState.value = null
     }
     override suspend fun clearUnconfirmedEnd() { unconfirmedEndState.value = null }
