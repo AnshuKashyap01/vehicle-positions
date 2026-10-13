@@ -105,7 +105,7 @@ class AppNavViewModel @Inject constructor(
 }
 
 @Composable
-fun AppNav(navViewModel: AppNavViewModel = hiltViewModel()) {
+fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltViewModel()) {
     val startDestination by navViewModel.startDestination.collectAsStateWithLifecycle()
     val destination = startDestination
 
@@ -117,7 +117,7 @@ fun AppNav(navViewModel: AppNavViewModel = hiltViewModel()) {
     }
 
     val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = destination) {
+    NavHost(navController = navController, startDestination = destination, modifier = modifier) {
         composable(ROUTE_LOGIN) {
             LoginScreen(
                 onLoginSuccess = {

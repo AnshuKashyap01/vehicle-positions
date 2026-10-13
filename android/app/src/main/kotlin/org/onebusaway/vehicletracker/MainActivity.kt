@@ -36,11 +36,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             AppTheme {
-                // enableEdgeToEdge() draws content behind the system bars; without this, top/bottom
-                // content (e.g. the tracking screen's status banner and End Trip button) can be
-                // obscured by the status bar or gesture/navigation bar.
-                Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-                    AppNav()
+                // enableEdgeToEdge() makes the system bars transparent, so whatever is behind them shows
+                // through: the Surface fills the whole window to put the theme's background there, and
+                // the padding goes inside it to keep the screens (the status banner, End Trip) clear of
+                // the bars and the keyboard.
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    AppNav(modifier = Modifier.safeDrawingPadding())
                 }
             }
         }

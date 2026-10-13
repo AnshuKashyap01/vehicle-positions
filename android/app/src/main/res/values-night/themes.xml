@@ -1,0 +1,7 @@
+<resources>
+    <!-- Platform UI drawn over Compose, such as the text selection toolbar, takes light or dark from
+         this theme's isLightTheme, so at night it has to be a dark one. -->
+    <style name="Theme.VehicleTracker" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>
