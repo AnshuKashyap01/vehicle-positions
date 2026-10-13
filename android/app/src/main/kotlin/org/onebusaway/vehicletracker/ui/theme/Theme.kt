@@ -13,8 +13,10 @@ import androidx.compose.ui.unit.dp
 // The design's text fields have 8 dp corners; no other component here uses extraSmall.
 private val AppShapes = Shapes(extraSmall = RoundedCornerShape(8.dp))
 
-private val LocalStatusColors = staticCompositionLocalOf<StatusColors> { error("StatusColors read outside AppTheme") }
-private val LocalProblemColors = staticCompositionLocalOf<ProblemColors> { error("ProblemColors read outside AppTheme") }
+// Outside AppTheme these are the light set, as MaterialTheme's own colours are: ScreenFlowTest draws
+// the screens without a theme around them.
+private val LocalStatusColors = staticCompositionLocalOf { LightStatusColors }
+private val LocalProblemColors = staticCompositionLocalOf { LightProblemColors }
 
 @Composable
 fun AppTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
