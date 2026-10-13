@@ -24,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.onebusaway.vehicletracker.R
-import org.onebusaway.vehicletracker.ui.theme.StatusRed
 import org.onebusaway.vehicletracker.ui.tracking.EndTripErrorDialog
 
 @Composable
@@ -93,7 +92,10 @@ fun ResumeShiftScreenContent(
             Button(
                 onClick = onEndShiftClick,
                 enabled = actionsEnabled,
-                colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.onSurface,
+                    contentColor = MaterialTheme.colorScheme.surface,
+                ),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
             ) {
                 Text(stringResource(R.string.resume_end_shift_button))

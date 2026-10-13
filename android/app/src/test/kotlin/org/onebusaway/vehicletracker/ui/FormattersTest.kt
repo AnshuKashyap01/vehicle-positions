@@ -8,11 +8,8 @@ import org.onebusaway.vehicletracker.engine.AdherenceStatus
 import org.onebusaway.vehicletracker.engine.TripFixtures
 import org.onebusaway.vehicletracker.engine.TripFixtures.at
 import org.onebusaway.vehicletracker.engine.TripFixtures.fix
-import org.onebusaway.vehicletracker.ui.theme.StatusBlue
-import org.onebusaway.vehicletracker.ui.theme.StatusGreen
-import org.onebusaway.vehicletracker.ui.theme.StatusGrey
-import org.onebusaway.vehicletracker.ui.theme.StatusRed
-import org.onebusaway.vehicletracker.ui.tracking.adherenceColor
+import org.onebusaway.vehicletracker.ui.theme.StatusTone
+import org.onebusaway.vehicletracker.ui.tracking.adherenceTone
 import org.onebusaway.vehicletracker.ui.tracking.deviationMinutes
 import org.onebusaway.vehicletracker.ui.tracking.formatClock
 import org.onebusaway.vehicletracker.ui.tracking.formatDuration
@@ -54,23 +51,23 @@ class FormattersTest {
         assertEquals("a clock behind the trip's start shows no time, not a negative one", "00:00", formatDuration(-5))
     }
 
-    @Test fun `colours follow OneBusAway's convention`() {
-        assertEquals(StatusGreen, adherenceColor(atStop1(0)))
-        assertEquals(StatusRed, adherenceColor(atStop1(-120)))
-        assertEquals(StatusBlue, adherenceColor(atStop1(400)))
+    @Test fun `tones follow OneBusAway's convention`() {
+        assertEquals(StatusTone.ON_TIME, adherenceTone(atStop1(0)))
+        assertEquals(StatusTone.EARLY, adherenceTone(atStop1(-120)))
+        assertEquals(StatusTone.LATE, adherenceTone(atStop1(400)))
 
         val offRoute = evaluator.evaluate(fix(47.6045, -122.3200, at(8, 5)), previous = null)
         assertEquals(AdherenceStatus.OFF_ROUTE, offRoute.status)
-        assertEquals(StatusGrey, adherenceColor(offRoute))
+        assertEquals(StatusTone.NEUTRAL, adherenceTone(offRoute))
     }
 
-    @Test fun `off schedule keeps the colour of its direction`() {
+    @Test fun `off schedule keeps the tone of its direction`() {
         val farAhead = atStop1(-1000)
         val farBehind = atStop1(6000)
         assertEquals(AdherenceStatus.OFF_SCHEDULE, farAhead.status)
         assertEquals(AdherenceStatus.OFF_SCHEDULE, farBehind.status)
 
-        assertEquals(StatusRed, adherenceColor(farAhead))
-        assertEquals(StatusBlue, adherenceColor(farBehind))
+        assertEquals(StatusTone.EARLY, adherenceTone(farAhead))
+        assertEquals(StatusTone.LATE, adherenceTone(farBehind))
     }
 }

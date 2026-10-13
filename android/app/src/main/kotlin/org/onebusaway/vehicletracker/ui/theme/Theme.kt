@@ -8,15 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-
-// The banner paints these behind white text and the adherence panel draws them as text on the
-// light and the dark surface alike, so each is a mid-tone that reads in both themes.
-val StatusGreen = Color(0xFF1B873B)
-val StatusRed = Color(0xFFC62828)
-val StatusBlue = Color(0xFF1565C0)
-val StatusGrey = Color(0xFF757575)
 
 // The design's text fields have 8 dp corners; no other component here uses extraSmall.
 private val AppShapes = Shapes(extraSmall = RoundedCornerShape(8.dp))

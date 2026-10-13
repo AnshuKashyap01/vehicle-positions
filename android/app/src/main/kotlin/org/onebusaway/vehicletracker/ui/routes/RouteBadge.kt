@@ -38,7 +38,7 @@ fun RouteBadge(route: RouteDto) {
         text = route.shortName.ifEmpty { stringResource(R.string.routes_badge_placeholder) },
         color = foreground,
         style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
+        fontWeight = FontWeight.SemiBold,
         modifier = Modifier
             .background(background, RoundedCornerShape(6.dp))
             .padding(horizontal = 10.dp, vertical = 4.dp),
