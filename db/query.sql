@@ -4,12 +4,16 @@ VALUES ($1)
 ON CONFLICT (id) DO UPDATE SET updated_at = NOW();
 
 -- name: InsertLocationPoint :exec
-INSERT INTO location_points (vehicle_id, trip_id, latitude, longitude, bearing, speed, accuracy, timestamp, driver_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+INSERT INTO location_points (vehicle_id, trip_id, route_id, start_date, latitude, longitude, bearing, speed, accuracy, timestamp, driver_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
 
 -- name: GetRecentLocations :many
+-- route_id and start_date are selected because the feed's TripDescriptor is
+-- documented to carry what the driver sent: a seeded vehicle that came back
+-- without them would publish a narrower descriptor than it did before the
+-- restart, and a route-only vehicle would publish none at all.
 SELECT DISTINCT ON (vehicle_id)
-    vehicle_id, trip_id, latitude, longitude, bearing, speed, accuracy, timestamp, driver_id
+    vehicle_id, trip_id, route_id, start_date, latitude, longitude, bearing, speed, accuracy, timestamp, driver_id
 FROM location_points
 WHERE received_at > $1
 ORDER BY vehicle_id, received_at DESC;
