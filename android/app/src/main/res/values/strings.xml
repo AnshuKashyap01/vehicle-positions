@@ -49,6 +49,7 @@
     <string name="runs_retry_button">Retry</string>
     <string name="runs_error_not_assigned">You are not assigned to this vehicle.</string>
     <string name="runs_error_trip_active">You already have an active trip.</string>
+    <string name="runs_error_previous_trip_not_ended">Your previous trip could not be ended yet. Check your connection and try again.</string>
     <string name="runs_error_network">Could not reach the server. Check your connection.</string>
     <string name="runs_error_no_geometry">This run has no shape or stops to follow.</string>
     <string name="runs_error_trip_not_active">The schedule has moved on to a new day since this list was loaded. Reload it to pick a run.</string>

@@ -67,7 +67,7 @@ class RepositoriesTest {
         // The clock is 2026-08-04T23:30:00Z, which is already the 5th in Nairobi and still the
         // 4th in Los Angeles — the device's date is the wrong answer either way for a run the
         // catalog dated the 3rd, as an after-midnight departure is.
-        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 1_785_886_200L })
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 1_785_886_200L })
 
         val result = repo.start("bus-1", "5", "trip-0830", "20260803")
 
@@ -87,7 +87,7 @@ class RepositoriesTest {
         server.enqueue(MockResponse().setResponseCode(201).setBody(
             """{"id":8,"user_id":1,"vehicle_id":"bus-1","route_id":"5","gtfs_trip_id":"","start_time":"2026-08-04T08:30:00Z","status":"active"}"""))
         val store = FakeTripStateStore()
-        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 500L })
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 500L })
 
         repo.start("bus-1", " 5 ", "  ", "20260804")
 
@@ -111,7 +111,7 @@ class RepositoriesTest {
         val server = MockWebServer().apply { start() }
         server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":"driver is not assigned to this vehicle"}"""))
         server.enqueue(MockResponse().setResponseCode(409).setBody("""{"error":"driver already has an active trip"}"""))
-        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, FakeTripStateStore(), FakeVehiclePrefsStore(), clock = { 0L })
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, FakeTripStateStore(), FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
 
         assertTrue(repo.start("bus-1", "5", "", "20260804").exceptionOrNull() is ApiError.NotAssigned)
         assertTrue(repo.start("bus-1", "5", "", "20260804").exceptionOrNull() is ApiError.TripAlreadyActive)
@@ -123,10 +123,35 @@ class RepositoriesTest {
         server.enqueue(MockResponse().setBody("""{"status":"trip ended"}"""))
         val store = FakeTripStateStore()
         store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L))
-        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 0L })
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
 
         assertTrue(repo.end(7L).isSuccess)
         assertNull(store.activeTrip.first())
+        server.shutdown()
+    }
+
+    @Test fun `trip end treats a 404 as already ended`() = runTest {
+        val server = MockWebServer().apply { start() }
+        // Retry after an end whose reply was lost: the server has already closed the trip.
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"active trip not found"}"""))
+        val store = FakeTripStateStore()
+        store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L))
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
+
+        assertTrue(repo.end(7L).isSuccess)
+        assertNull(store.activeTrip.first())
+        server.shutdown()
+    }
+
+    @Test fun `trip end that fails keeps the active trip`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"failed to end trip"}"""))
+        val store = FakeTripStateStore()
+        store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L))
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
+
+        assertTrue(repo.end(7L).isFailure)
+        assertEquals(7L, store.activeTrip.first()?.tripDbId)
         server.shutdown()
     }
 
@@ -137,8 +162,8 @@ class RepositoriesTest {
         val server = MockWebServer().apply { start() }
         server.enqueue(MockResponse().setBody("""{"status":"trip ended"}"""))
         server.enqueue(MockResponse().setResponseCode(201).setBody(startedTrip9))
-        val store = FakeTripStateStore().apply { unconfirmedEndState.value = 7L }
-        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 500L })
+        val store = FakeTripStateStore().apply { unconfirmedEndState.value = UnconfirmedEnd(7L, "2") }
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), signedInAs("2"), clock = { 500L })
 
         assertTrue(repo.start("bus-1", "5", "", "20260804").isSuccess)
 
@@ -146,7 +171,7 @@ class RepositoriesTest {
         assertEquals("/api/v1/trips/end", end.path)
         assertEquals("7", Json.parseToJsonElement(end.body.readUtf8()).jsonObject["trip_id"]!!.jsonPrimitive.content)
         assertEquals("/api/v1/trips/start", server.takeRequest().path)
-        assertNull(store.unconfirmedEndTripDbId.first())
+        assertNull(store.unconfirmedEnd.first())
         assertEquals(9L, store.activeTrip.first()?.tripDbId)
         server.shutdown()
     }
@@ -156,12 +181,12 @@ class RepositoriesTest {
         // The earlier end got through and only its response was lost.
         server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":"active trip not found"}"""))
         server.enqueue(MockResponse().setResponseCode(201).setBody(startedTrip9))
-        val store = FakeTripStateStore().apply { unconfirmedEndState.value = 7L }
-        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 500L })
+        val store = FakeTripStateStore().apply { unconfirmedEndState.value = UnconfirmedEnd(7L, "2") }
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), signedInAs("2"), clock = { 500L })
 
         assertTrue(repo.start("bus-1", "5", "", "20260804").isSuccess)
 
-        assertNull(store.unconfirmedEndTripDbId.first())
+        assertNull(store.unconfirmedEnd.first())
         assertEquals(9L, store.activeTrip.first()?.tripDbId)
         server.shutdown()
     }
@@ -170,15 +195,46 @@ class RepositoriesTest {
         val server = MockWebServer().apply { start() }
         server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"failed to end trip"}"""))
         server.enqueue(MockResponse().setResponseCode(201).setBody(startedTrip9))
-        val store = FakeTripStateStore().apply { unconfirmedEndState.value = 7L }
-        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), clock = { 500L })
+        val store = FakeTripStateStore().apply { unconfirmedEndState.value = UnconfirmedEnd(7L, "2") }
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), signedInAs("2"), clock = { 500L })
 
         val result = repo.start("bus-1", "5", "", "20260804")
 
-        assertTrue(result.exceptionOrNull() is ApiError.Other)
+        assertTrue(result.exceptionOrNull() is ApiError.PreviousTripNotEnded)
         assertEquals(1, server.requestCount)
-        assertEquals(7L, store.unconfirmedEndTripDbId.first())
+        assertEquals(UnconfirmedEnd(7L, "2"), store.unconfirmedEnd.first())
         assertNull(store.activeTrip.first())
+        server.shutdown()
+    }
+
+    @Test fun `trip start leaves another driver's leftover end alone`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setResponseCode(201).setBody(startedTrip9))
+        // Driver 1 ended a trip on this phone only; driver 2 has since signed in. The server would
+        // answer driver 2's end with a 404, and clearing on that would leave driver 1 stuck.
+        val store = FakeTripStateStore().apply { unconfirmedEndState.value = UnconfirmedEnd(7L, "1") }
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), signedInAs("2"), clock = { 500L })
+
+        assertTrue(repo.start("bus-1", "5", "", "20260804").isSuccess)
+
+        assertEquals(1, server.requestCount)
+        assertEquals("/api/v1/trips/start", server.takeRequest().path)
+        assertEquals(UnconfirmedEnd(7L, "1"), store.unconfirmedEnd.first())
+        server.shutdown()
+    }
+
+    @Test fun `a leftover end stored without a driver goes out under whoever is signed in`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setBody("""{"status":"trip ended"}"""))
+        server.enqueue(MockResponse().setResponseCode(201).setBody(startedTrip9))
+        // Stored by the build before drivers were recorded.
+        val store = FakeTripStateStore().apply { unconfirmedEndState.value = UnconfirmedEnd(7L, null) }
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), signedInAs("2"), clock = { 500L })
+
+        assertTrue(repo.start("bus-1", "5", "", "20260804").isSuccess)
+
+        assertEquals("/api/v1/trips/end", server.takeRequest().path)
+        assertNull(store.unconfirmedEnd.first())
         server.shutdown()
     }
 
@@ -187,7 +243,7 @@ class RepositoriesTest {
         server.enqueue(MockResponse().setResponseCode(201).setBody(
             """{"id":9,"user_id":1,"vehicle_id":"bus-1","route_id":"5","gtfs_trip_id":"","start_time":"2026-08-04T08:30:00Z","status":"active"}"""))
         val prefs = FakeVehiclePrefsStore()
-        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, FakeTripStateStore(), prefs, clock = { 500L })
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, FakeTripStateStore(), prefs, FakeSessionStore(), clock = { 500L })
 
         assertTrue(repo.start("bus-1", "5", "", "20260804").isSuccess)
 
@@ -199,7 +255,7 @@ class RepositoriesTest {
         val server = MockWebServer().apply { start() }
         server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":"driver is not assigned to this vehicle"}"""))
         val prefs = FakeVehiclePrefsStore()
-        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, FakeTripStateStore(), prefs, clock = { 0L })
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, FakeTripStateStore(), prefs, FakeSessionStore(), clock = { 0L })
 
         assertTrue(repo.start("bus-1", "5", "", "20260804").isFailure)
 
@@ -220,7 +276,7 @@ class RepositoriesTest {
             override suspend fun toggleFavorite(vehicleId: String) = Unit
             override suspend fun recordUse(vehicleId: String): Unit = throw IOException("disk full")
         }
-        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, tripState, failingPrefs, clock = { 500L })
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, tripState, failingPrefs, FakeSessionStore(), clock = { 500L })
 
         val result = repo.start("bus-1", "5", "", "20260804")
 
@@ -380,7 +436,7 @@ class RepositoriesTest {
 
     @Test fun `trip repository returns failure instead of throwing when session has no server url`() = runTest {
         val holder = ApiHolder(FakeSessionStore(), CoroutineScope(Job().apply { cancel() }))
-        val repo = TripRepository(TrackerApiProvider(holder::api), FakeTripStateStore(), FakeVehiclePrefsStore(), clock = { 0L })
+        val repo = TripRepository(TrackerApiProvider(holder::api), FakeTripStateStore(), FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
 
         val result = repo.start("bus-1", "5", "trip-1", "20260804")
 

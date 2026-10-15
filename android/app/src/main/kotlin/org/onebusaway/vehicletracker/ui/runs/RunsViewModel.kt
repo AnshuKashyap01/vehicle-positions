@@ -24,11 +24,12 @@ import java.time.Instant
 import javax.inject.Inject
 
 /** Why a run could not be started, in the terms the driver is shown. */
-enum class TripError { NOT_ASSIGNED, TRIP_ACTIVE, NETWORK, NO_GEOMETRY, TRIP_NOT_ACTIVE, OTHER }
+enum class TripError { NOT_ASSIGNED, TRIP_ACTIVE, PREVIOUS_TRIP_NOT_ENDED, NETWORK, NO_GEOMETRY, TRIP_NOT_ACTIVE, OTHER }
 
 fun Throwable.toTripError(): TripError = when {
     this is ApiError.NotAssigned -> TripError.NOT_ASSIGNED
     this is ApiError.TripAlreadyActive -> TripError.TRIP_ACTIVE
+    this is ApiError.PreviousTripNotEnded -> TripError.PREVIOUS_TRIP_NOT_ENDED
     this is ApiError.TripNotActiveToday -> TripError.TRIP_NOT_ACTIVE
     this is ApiError.Other && msg == "network" -> TripError.NETWORK
     else -> TripError.OTHER

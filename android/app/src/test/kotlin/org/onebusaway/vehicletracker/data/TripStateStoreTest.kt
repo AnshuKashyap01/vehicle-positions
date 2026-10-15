@@ -101,26 +101,47 @@ class TripStateStoreTest {
         assertFalse(dataStore.data.first().contains(stringPreferencesKey("trip_location_id")))
     }
 
-    @Test fun `a trip ended on this phone keeps its server id until the end is confirmed`() = runTest {
-        val store = DataStoreTripStateStore(newDataStore(), nairobi)
+    @Test fun `a trip ended on this phone keeps its server id and driver until the end is confirmed`() = runTest {
+        val dataStore = newDataStore()
+        val store = DataStoreTripStateStore(dataStore, nairobi)
         store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L))
 
-        store.endActiveTripLocally()
+        store.endActiveTripLocally(driverId = "2")
 
         assertNull(store.activeTrip.first())
-        assertEquals(7L, store.unconfirmedEndTripDbId.first())
+        assertEquals(UnconfirmedEnd(7L, "2"), store.unconfirmedEnd.first())
 
         store.clearUnconfirmedEnd()
 
-        assertNull(store.unconfirmedEndTripDbId.first())
+        assertNull(store.unconfirmedEnd.first())
+        assertFalse(dataStore.data.first().contains(stringPreferencesKey("unconfirmed_end_driver_id")))
+    }
+
+    @Test fun `a trip ended with no readable driver does not keep an earlier driver`() = runTest {
+        val dataStore = newDataStore()
+        val store = DataStoreTripStateStore(dataStore, nairobi)
+        // Left behind by hand, as a write that never cleared it would.
+        dataStore.edit { it[stringPreferencesKey("unconfirmed_end_driver_id")] = "1" }
+        store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L))
+
+        store.endActiveTripLocally(driverId = null)
+
+        assertEquals(UnconfirmedEnd(7L, null), store.unconfirmedEnd.first())
+    }
+
+    @Test fun `an end stored before drivers were recorded reads back without a driver`() = runTest {
+        val dataStore = newDataStore()
+        dataStore.edit { it[longPreferencesKey("unconfirmed_end_trip_db_id")] = 7L }
+
+        assertEquals(UnconfirmedEnd(7L, null), DataStoreTripStateStore(dataStore, nairobi).unconfirmedEnd.first())
     }
 
     @Test fun `ending locally with no stored trip leaves no end to send`() = runTest {
         val store = DataStoreTripStateStore(newDataStore(), nairobi)
 
-        store.endActiveTripLocally()
+        store.endActiveTripLocally(driverId = "2")
 
-        assertNull(store.unconfirmedEndTripDbId.first())
+        assertNull(store.unconfirmedEnd.first())
     }
 
     @Test fun `legacyGtfsTripId treats a copy of the route id as no trip id`() {

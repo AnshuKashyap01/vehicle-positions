@@ -470,14 +470,15 @@ class ViewModelsTest {
 
     /**
      * Builds a [RunsViewModel] over a `MockWebServer` answering the trips call with [tripsBody],
-     * every geometry fetch with [geometry], and each start with the next of [startResponses],
-     * loads route R1 at wall-clock time [now], and runs [block] against it.
+     * every geometry fetch with [geometry], each start with the next of [startResponses], and
+     * every end with [endResponse], loads route R1 at wall-clock time [now], and runs [block] against it.
      */
     private fun withRunsViewModel(
         tripsBody: String = twoRunsJson,
         now: String = "2026-09-22T08:05:00-07:00",
         geometry: () -> MockResponse = { MockResponse().setBody(t1GeometryJson) },
         startResponses: List<MockResponse> = emptyList(),
+        endResponse: () -> MockResponse = { MockResponse().setBody("""{"status":"trip ended"}""") },
         geometryStore: TripGeometryStore = FakeTripGeometryStore(),
         block: (RunsViewModel, MockWebServer, FakeServiceController, FakeTripStateStore) -> Unit,
     ) {
@@ -488,6 +489,7 @@ class ViewModelsTest {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse = when {
                 request.path == "/api/v1/trips/start" -> starts.poll() ?: MockResponse().setResponseCode(500)
+                request.path == "/api/v1/trips/end" -> endResponse()
                 request.path.orEmpty().startsWith("/api/v1/gtfs/trips/") -> geometry()
                 else -> MockResponse().setBody(tripsBody)
             }
@@ -497,7 +499,7 @@ class ViewModelsTest {
             val nowEpochSec = OffsetDateTime.parse(now).toEpochSecond()
             val clock = { nowEpochSec }
             val tripState = FakeTripStateStore()
-            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), clock = clock)
+            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), FakeSessionStore(), clock = clock)
             val serviceController = FakeServiceController()
             // The nav graph's arguments, which is where the ViewModel reads them from — and it
             // loads off them in init, with no load() call from the screen.
@@ -611,6 +613,18 @@ class ViewModelsTest {
 
             vm.onStartRun("T1") { }
             awaitCondition(description = "409 surfaced") { loadedRuns(vm).error == TripError.TRIP_ACTIVE }
+            assertEquals(0, serviceController.startCount)
+        }
+    }
+
+    @Test fun `a leftover end that fails is reported as the previous trip, not this one`() = runTest(dispatcher) {
+        val refused = { MockResponse().setResponseCode(500).setBody("""{"error":"failed to end trip"}""") }
+        withRunsViewModel(endResponse = refused) { vm, server, serviceController, tripState ->
+            tripState.unconfirmedEndState.value = UnconfirmedEnd(7L, null)
+            vm.onStartRun("T1") { fail("nothing may start while the previous trip is open") }
+            awaitCondition(description = "start failure surfaced") { loadedRuns(vm).error != null }
+
+            assertEquals(TripError.PREVIOUS_TRIP_NOT_ENDED, loadedRuns(vm).error)
             assertEquals(0, serviceController.startCount)
         }
     }
@@ -767,8 +781,8 @@ class ViewModelsTest {
             val tripState = FakeTripStateStore().apply { tripState.value = t1Trip }
             val tracking = TrackingRepository()
             val geometryStore = FakeTripGeometryStore().apply { stored = TripFixtures.t1 }
-            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), clock = { 0L })
-            val tripEnder = TripEnder(tripRepository, tripState, geometryStore, FakeServiceController())
+            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
+            val tripEnder = TripEnder(tripRepository, tripState, geometryStore, FakeServiceController(), FakeSessionStore())
             val vm = TrackingViewModel(tracking, tripState, tripEnder, mapFiles)
             awaitCondition(description = "active trip loaded") { vm.uiState.value.activeTrip != null }
             block(vm, tracking, geometryStore)
@@ -879,8 +893,8 @@ class ViewModelsTest {
             val tripState = FakeTripStateStore().apply { tripState.value = t1Trip }
             val geometryStore = FakeTripGeometryStore().apply { stored = TripFixtures.t1 }
             val serviceController = FakeServiceController()
-            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), clock = { 0L })
-            val tripEnder = TripEnder(tripRepository, tripState, geometryStore, serviceController)
+            val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
+            val tripEnder = TripEnder(tripRepository, tripState, geometryStore, serviceController, signedInAs("2"))
             val now = t1Trip.startedAtEpochSec + 2 * 3600 + 5 * 60
             val vm = ResumeShiftViewModel(tripState, serviceController, tripEnder, clock = { now })
             awaitCondition(description = "stored trip loaded") { vm.uiState.value.trip != null }
@@ -949,8 +963,9 @@ class ViewModelsTest {
             awaitCondition(description = "shift ended locally") { ended }
             assertTrue(!f.vm.uiState.value.endTripError)
             assertNull(f.tripState.tripState.value)
-            // The server still has it open, so its id is kept for the next start to end it.
-            assertEquals(t1Trip.tripDbId, f.tripState.unconfirmedEndState.value)
+            // The server still has it open, so its id is kept for the next start to end it, with
+            // the driver it belongs to.
+            assertEquals(UnconfirmedEnd(t1Trip.tripDbId, "2"), f.tripState.unconfirmedEndState.value)
             assertNull(f.geometryStore.stored)
             assertEquals(1, f.serviceController.stopCount)
         }

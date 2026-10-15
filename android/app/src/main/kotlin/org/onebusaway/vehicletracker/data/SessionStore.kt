@@ -15,12 +15,35 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
 import java.security.GeneralSecurityException
+import java.util.Base64
 
 data class Session(val serverUrl: String?, val token: String?, val issuedAtEpochSec: Long?) {
     fun hasFreshToken(nowEpochSec: Long): Boolean =
         token != null && issuedAtEpochSec != null && nowEpochSec - issuedAtEpochSec < 24 * 3600
+
+    /** The signed-in driver's user id on the server, or null when there is no readable token. */
+    val driverId: String? get() = token?.let(::jwtSubject)
+}
+
+/**
+ * The `sub` claim of the server's JWT, which is the user id `/trips/end` checks a trip against.
+ * Read without checking the signature: the token came from the server, and this only decides
+ * which driver a trip stored on this phone belongs to.
+ */
+internal fun jwtSubject(token: String): String? = try {
+    token.split('.').getOrNull(1)?.let { payload ->
+        val claims = Json.parseToJsonElement(String(Base64.getUrlDecoder().decode(payload), Charsets.UTF_8))
+        claims.jsonObject["sub"]?.jsonPrimitive?.contentOrNull
+    }
+} catch (e: IllegalArgumentException) {
+    // Not Base64url, not JSON, or not a JSON object: no driver to read.
+    null
 }
 
 interface SessionStore {

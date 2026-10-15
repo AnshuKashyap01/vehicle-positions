@@ -23,21 +23,32 @@ data class ActiveTrip(
     val startedAtEpochSec: Long,
 )
 
+/**
+ * A trip ended on this phone only, whose end the server has not confirmed. [driverId] is the
+ * driver who ended it ([Session.driverId]); null for one stored before drivers were recorded.
+ */
+data class UnconfirmedEnd(val tripDbId: Long, val driverId: String?) {
+    /**
+     * Only the driver who ended it can send its end: for anyone else the server answers 404, and
+     * a 404 would clear it for good while it is still open. An end stored without a driver goes
+     * out under whoever is signed in, as it did before drivers were recorded.
+     */
+    fun belongsTo(signedInDriverId: String?): Boolean = driverId == null || driverId == signedInDriverId
+}
+
 interface TripStateStore {
     val activeTrip: Flow<ActiveTrip?>
-
-    /** The server id of a trip ended on this phone only, whose end the server has not confirmed. */
-    val unconfirmedEndTripDbId: Flow<Long?>
+    val unconfirmedEnd: Flow<UnconfirmedEnd?>
     val recentRoutes: Flow<List<String>>
     suspend fun saveActiveTrip(trip: ActiveTrip)
     suspend fun clearActiveTrip()
 
     /**
-     * Clears the active trip but keeps its server id as [unconfirmedEndTripDbId], in one write so
-     * a crash between the two cannot lose it: the server keeps the trip open until it hears the
-     * end, and refuses every start until then.
+     * Clears the active trip but keeps its server id and [driverId] as [unconfirmedEnd], in one
+     * write so a crash between the two cannot lose it: the server keeps the trip open until it
+     * hears the end, and refuses every start until then.
      */
-    suspend fun endActiveTripLocally()
+    suspend fun endActiveTripLocally(driverId: String?)
     suspend fun clearUnconfirmedEnd()
     suspend fun addRecentRoute(routeId: String)
 }
@@ -69,6 +80,7 @@ class DataStoreTripStateStore(
         val TRIP_START_DATE = stringPreferencesKey("trip_start_date")
         val TRIP_STARTED_AT = longPreferencesKey("trip_started_at")
         val UNCONFIRMED_END_TRIP_DB_ID = longPreferencesKey("unconfirmed_end_trip_db_id")
+        val UNCONFIRMED_END_DRIVER_ID = stringPreferencesKey("unconfirmed_end_driver_id")
         val RECENT_ROUTES = stringPreferencesKey("recent_routes")
 
         /** Written only by the build before the split; read once to restore an in-progress trip. */
@@ -98,7 +110,9 @@ class DataStoreTripStateStore(
         }
     }
 
-    override val unconfirmedEndTripDbId: Flow<Long?> = dataStore.data.map { it[Keys.UNCONFIRMED_END_TRIP_DB_ID] }
+    override val unconfirmedEnd: Flow<UnconfirmedEnd?> = dataStore.data.map { prefs ->
+        prefs[Keys.UNCONFIRMED_END_TRIP_DB_ID]?.let { UnconfirmedEnd(it, prefs[Keys.UNCONFIRMED_END_DRIVER_ID]) }
+    }
 
     override val recentRoutes: Flow<List<String>> = dataStore.data.map { prefs ->
         prefs[Keys.RECENT_ROUTES]?.split("|")?.filter { it.isNotEmpty() } ?: emptyList()
@@ -119,15 +133,25 @@ class DataStoreTripStateStore(
         dataStore.edit { it.removeActiveTrip() }
     }
 
-    override suspend fun endActiveTripLocally() {
+    override suspend fun endActiveTripLocally(driverId: String?) {
         dataStore.edit { prefs ->
-            prefs[Keys.TRIP_DB_ID]?.let { prefs[Keys.UNCONFIRMED_END_TRIP_DB_ID] = it }
+            prefs[Keys.TRIP_DB_ID]?.let { tripDbId ->
+                prefs[Keys.UNCONFIRMED_END_TRIP_DB_ID] = tripDbId
+                if (driverId != null) {
+                    prefs[Keys.UNCONFIRMED_END_DRIVER_ID] = driverId
+                } else {
+                    prefs.remove(Keys.UNCONFIRMED_END_DRIVER_ID)
+                }
+            }
             prefs.removeActiveTrip()
         }
     }
 
     override suspend fun clearUnconfirmedEnd() {
-        dataStore.edit { it.remove(Keys.UNCONFIRMED_END_TRIP_DB_ID) }
+        dataStore.edit { prefs ->
+            prefs.remove(Keys.UNCONFIRMED_END_TRIP_DB_ID)
+            prefs.remove(Keys.UNCONFIRMED_END_DRIVER_ID)
+        }
     }
 
     private fun MutablePreferences.removeActiveTrip() {

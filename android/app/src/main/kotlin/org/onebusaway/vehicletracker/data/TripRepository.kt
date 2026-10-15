@@ -16,6 +16,7 @@ class TripRepository @Inject constructor(
     private val apiProvider: TrackerApiProvider,
     private val tripStateStore: TripStateStore,
     private val vehiclePrefsStore: VehiclePrefsStore,
+    private val sessionStore: SessionStore,
     @param:EpochSecondsClock private val clock: () -> Long,
 ) {
     /**
@@ -33,10 +34,19 @@ class TripRepository @Inject constructor(
         routeId: String,
         gtfsTripId: String,
         serviceDate: String,
+    ): Result<ActiveTrip> {
+        endUnconfirmedTrip().onFailure { return Result.failure(it) }
+        return startTrip(vehicleId, routeId, gtfsTripId, serviceDate)
+    }
+
+    private suspend fun startTrip(
+        vehicleId: String,
+        routeId: String,
+        gtfsTripId: String,
+        serviceDate: String,
     ): Result<ActiveTrip> = try {
         val cleanedTripId = gtfsTripId.trim()
         val cleanedRouteId = routeId.trim()
-        endUnconfirmedTrip()
         val trip = apiProvider.get().startTrip(StartTripRequest(vehicleId, cleanedRouteId, cleanedTripId))
         val startedAt = clock()
         val activeTrip = ActiveTrip(
@@ -60,7 +70,7 @@ class TripRepository @Inject constructor(
     }
 
     suspend fun end(tripDbId: Long): Result<Unit> = try {
-        apiProvider.get().endTrip(EndTripRequest(tripDbId))
+        sendEnd(tripDbId)
         tripStateStore.clearActiveTrip()
         Result.success(Unit)
     } catch (e: CancellationException) {
@@ -72,17 +82,34 @@ class TripRepository @Inject constructor(
     /**
      * Sends the end of a trip the driver ended on this phone only: the server still has it open,
      * and refuses every start until it hears. If this fails the start fails too, as it would have
-     * been refused anyway. A 404 means the server has no open trip of this driver's under that id,
-     * which is what the end was for; usually an earlier end got through and only its reply was lost.
+     * been refused anyway, with [ApiError.PreviousTripNotEnded] so the driver is told which trip
+     * is stuck. Another driver's end is left for them ([UnconfirmedEnd.belongsTo]): their open
+     * trip does not block this driver's start.
      */
-    private suspend fun endUnconfirmedTrip() {
-        val tripDbId = tripStateStore.unconfirmedEndTripDbId.first() ?: return
+    private suspend fun endUnconfirmedTrip(): Result<Unit> = try {
+        val pending = tripStateStore.unconfirmedEnd.first()
+        if (pending != null && pending.belongsTo(sessionStore.session.first().driverId)) {
+            sendEnd(pending.tripDbId)
+            tripStateStore.clearUnconfirmedEnd()
+        }
+        Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "Could not end the trip ended on this phone only", e)
+        Result.failure(ApiError.PreviousTripNotEnded)
+    }
+
+    /**
+     * A 404 means the server has no open trip of this driver's under that id, which is what the
+     * end was for: usually an earlier end got through and only its reply was lost.
+     */
+    private suspend fun sendEnd(tripDbId: Long) {
         try {
             apiProvider.get().endTrip(EndTripRequest(tripDbId))
         } catch (e: HttpException) {
             if (e.code() != 404) throw e
         }
-        tripStateStore.clearUnconfirmedEnd()
     }
 }
 

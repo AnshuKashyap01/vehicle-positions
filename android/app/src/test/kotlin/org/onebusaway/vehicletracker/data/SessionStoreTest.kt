@@ -29,6 +29,7 @@ import java.io.File
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.security.ProviderException
+import java.util.Base64
 
 /**
  * Exercises [EncryptedSessionStore] against a real file-backed DataStore and a [FakeCryptor],
@@ -251,5 +252,18 @@ class SessionStoreTest {
 
         val TOKEN_KEY = stringPreferencesKey("token_enc")
         val LEGACY_TOKEN_KEY = stringPreferencesKey("token")
+    }
+
+    @Test fun `the driver id is the sub of the server's token`() {
+        assertEquals("2", Session("http://localhost/", jwtFor("2"), 0L).driverId)
+        assertNull(Session("http://localhost/", null, null).driverId)
+    }
+
+    @Test fun `a token that is not a readable JWT has no driver id`() {
+        val noSub = "e30." + Base64.getUrlEncoder().withoutPadding().encodeToString("""{"exp":1}""".toByteArray()) + ".sig"
+        assertNull(jwtSubject("jwt"))
+        assertNull(jwtSubject("e30.!!!.sig"))
+        assertNull(jwtSubject("e30.WzFd.sig")) // [1]: JSON, but not an object
+        assertNull(jwtSubject(noSub))
     }
 }
