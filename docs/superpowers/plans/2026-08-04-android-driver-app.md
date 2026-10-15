@@ -1,5 +1,7 @@
 # Android Driver App v1 Implementation Plan
 
+> **Historical plan.** This is how the app was first built, in August 2026. The build has moved on since: it is now AGP 9.4.1, Gradle 9.6.1 and built-in Kotlin (no `org.jetbrains.kotlin.android` plugin), so the AGP 8.11, Gradle 8.14.2 and `kotlin.android` setup below is out of date. For the current build, read `android/gradle/libs.versions.toml`, `android/app/build.gradle.kts` and `android/gradle/wrapper/gradle-wrapper.properties`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build the Android driver tracking app (login → vehicle select → trip setup → foreground-service tracking) plus one Go server endpoint (`GET /api/v1/vehicles`), per the approved spec at `docs/superpowers/specs/2026-08-04-android-driver-app-design.md`.
