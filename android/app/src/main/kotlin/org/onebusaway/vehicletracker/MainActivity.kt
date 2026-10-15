@@ -4,10 +4,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -20,6 +22,7 @@ import org.onebusaway.vehicletracker.data.map.refreshWhenSignedIn
 import org.onebusaway.vehicletracker.service.ServiceController
 import org.onebusaway.vehicletracker.service.rearmWhenActive
 import org.onebusaway.vehicletracker.ui.AppNav
+import org.onebusaway.vehicletracker.ui.AppNavViewModel
 import org.onebusaway.vehicletracker.ui.theme.AppTheme
 import javax.inject.Inject
 
@@ -31,16 +34,23 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var sessionStore: SessionStore
     @Inject lateinit var mapRepository: MapRepository
 
+    private val navViewModel: AppNavViewModel by viewModels()
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        // Held until AppNavViewModel knows the first screen: a DataStore read, and up to the service's
+        // announce grace when a trip is stored.
+        splash.setKeepOnScreenCondition { navViewModel.startDestination.value == null }
         enableEdgeToEdge()
         setContent {
             AppTheme {
-                // enableEdgeToEdge() draws content behind the system bars; without this, top/bottom
-                // content (e.g. the tracking screen's status banner and End Trip button) can be
-                // obscured by the status bar or gesture/navigation bar.
-                Surface(modifier = Modifier.fillMaxSize().safeDrawingPadding()) {
-                    AppNav()
+                // enableEdgeToEdge() makes the system bars transparent, so whatever is behind them shows
+                // through: the Surface fills the whole window to put the theme's background there, and
+                // the padding goes inside it to keep the screens (the status banner, End Trip) clear of
+                // the bars and the keyboard.
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    AppNav(modifier = Modifier.safeDrawingPadding(), navViewModel = navViewModel)
                 }
             }
         }

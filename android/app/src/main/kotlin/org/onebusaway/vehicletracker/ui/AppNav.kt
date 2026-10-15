@@ -1,12 +1,8 @@
 package org.onebusaway.vehicletracker.ui
 
 import android.net.Uri
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -105,19 +101,14 @@ class AppNavViewModel @Inject constructor(
 }
 
 @Composable
-fun AppNav(navViewModel: AppNavViewModel = hiltViewModel()) {
+fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltViewModel()) {
     val startDestination by navViewModel.startDestination.collectAsStateWithLifecycle()
     val destination = startDestination
-
-    if (destination == null) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        return
-    }
+    // MainActivity keeps the launch screen up until this is known.
+    if (destination == null) return
 
     val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = destination) {
+    NavHost(navController = navController, startDestination = destination, modifier = modifier) {
         composable(ROUTE_LOGIN) {
             LoginScreen(
                 onLoginSuccess = {

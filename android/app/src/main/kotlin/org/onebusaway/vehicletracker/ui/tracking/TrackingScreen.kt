@@ -27,10 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -43,8 +41,7 @@ import org.onebusaway.vehicletracker.data.TrackingState
 import org.onebusaway.vehicletracker.ui.map.RouteMap
 import org.onebusaway.vehicletracker.ui.map.glEsVersion
 import org.onebusaway.vehicletracker.ui.map.supportsMap
-import org.onebusaway.vehicletracker.ui.theme.StatusGreen
-import org.onebusaway.vehicletracker.ui.theme.StatusRed
+import org.onebusaway.vehicletracker.ui.theme.AppTheme
 
 @Composable
 fun TrackingScreen(
@@ -113,7 +110,10 @@ fun TrackingScreenContent(
             if (state.tracking.problem == TrackingProblem.AUTH_EXPIRED) {
                 Button(
                     onClick = onReauthClick,
-                    colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface,
+                    ),
                     modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
                 ) {
                     Text(stringResource(R.string.tracking_reauth_button))
@@ -146,7 +146,10 @@ fun TrackingScreenContent(
             Button(
                 onClick = { showConfirmDialog = true },
                 enabled = !state.ending,
-                colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.onSurface,
+                    contentColor = MaterialTheme.colorScheme.surface,
+                ),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
             ) {
                 Text(stringResource(R.string.tracking_end_trip_button))
@@ -202,12 +205,17 @@ internal fun EndTripErrorDialog(onRetry: () -> Unit, onEndLocally: () -> Unit, o
 
 @Composable
 private fun StatusBanner(problem: TrackingProblem, modifier: Modifier = Modifier) {
-    val (backgroundColor, textRes) = when (problem) {
-        TrackingProblem.NO_NETWORK -> StatusRed to R.string.tracking_status_no_network
-        TrackingProblem.NO_GPS -> StatusRed to R.string.tracking_status_no_gps
-        TrackingProblem.CLOCK_SKEW -> StatusRed to R.string.tracking_status_clock_skew
-        TrackingProblem.AUTH_EXPIRED -> StatusRed to R.string.tracking_status_auth_expired
-        TrackingProblem.NONE -> StatusGreen to R.string.tracking_status_connected
+    val textRes = when (problem) {
+        TrackingProblem.NO_NETWORK -> R.string.tracking_status_no_network
+        TrackingProblem.NO_GPS -> R.string.tracking_status_no_gps
+        TrackingProblem.CLOCK_SKEW -> R.string.tracking_status_clock_skew
+        TrackingProblem.AUTH_EXPIRED -> R.string.tracking_status_auth_expired
+        TrackingProblem.NONE -> R.string.tracking_status_connected
+    }
+    val (backgroundColor, textColor) = if (problem == TrackingProblem.NONE) {
+        AppTheme.statusColors.onTime.let { it.fill to it.onFill }
+    } else {
+        AppTheme.problemColors.let { it.container to it.content }
     }
     Box(
         modifier = modifier.background(backgroundColor),
@@ -215,9 +223,8 @@ private fun StatusBanner(problem: TrackingProblem, modifier: Modifier = Modifier
     ) {
         Text(
             text = stringResource(textRes),
-            color = Color.White,
+            color = textColor,
             style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
         )
@@ -236,16 +243,14 @@ private fun AdherencePanel(tracking: TrackingState) {
         adherence != null && geometry != null -> Column {
             Text(
                 text = adherenceLabel(adherence),
-                color = adherenceColor(adherence),
+                color = AppTheme.statusColors[adherenceTone(adherence)].text,
                 style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Black,
             )
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(R.string.tracking_adherence_next_stop, adherence.nextStop.name),
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f),
                 )
                 Spacer(Modifier.width(8.dp))
@@ -272,6 +277,5 @@ private fun PanelMessage(@StringRes textRes: Int) {
         text = stringResource(textRes),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.displaySmall,
-        fontWeight = FontWeight.Black,
     )
 }

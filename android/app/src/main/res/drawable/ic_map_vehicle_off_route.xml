@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- ic_map_vehicle in the off-route grey (StatusGrey in Theme.kt). -->
+<!-- ic_map_vehicle in the off-route grey. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="28dp"
     android:height="28dp"

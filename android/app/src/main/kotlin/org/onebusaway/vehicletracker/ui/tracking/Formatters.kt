@@ -1,17 +1,13 @@
 package org.onebusaway.vehicletracker.ui.tracking
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import org.onebusaway.vehicletracker.R
 import org.onebusaway.vehicletracker.engine.Adherence
 import org.onebusaway.vehicletracker.engine.AdherenceStatus
 import org.onebusaway.vehicletracker.ui.runs.clockTime
-import org.onebusaway.vehicletracker.ui.theme.StatusBlue
-import org.onebusaway.vehicletracker.ui.theme.StatusGreen
-import org.onebusaway.vehicletracker.ui.theme.StatusGrey
-import org.onebusaway.vehicletracker.ui.theme.StatusRed
+import org.onebusaway.vehicletracker.ui.theme.StatusTone
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -34,12 +30,12 @@ internal fun deviationMinutes(seconds: Double): Int {
 }
 
 /** OneBusAway's convention (spec §5.5): green on time, red early, blue late, grey off route. */
-internal fun adherenceColor(adherence: Adherence): Color = when (adherence.status) {
-    AdherenceStatus.ON_TIME -> StatusGreen
-    AdherenceStatus.EARLY -> StatusRed
-    AdherenceStatus.LATE -> StatusBlue
-    AdherenceStatus.OFF_SCHEDULE -> if (adherence.scheduleDeviationSec < 0) StatusRed else StatusBlue
-    AdherenceStatus.OFF_ROUTE -> StatusGrey
+internal fun adherenceTone(adherence: Adherence): StatusTone = when (adherence.status) {
+    AdherenceStatus.ON_TIME -> StatusTone.ON_TIME
+    AdherenceStatus.EARLY -> StatusTone.EARLY
+    AdherenceStatus.LATE -> StatusTone.LATE
+    AdherenceStatus.OFF_SCHEDULE -> if (adherence.scheduleDeviationSec < 0) StatusTone.EARLY else StatusTone.LATE
+    AdherenceStatus.OFF_ROUTE -> StatusTone.NEUTRAL
 }
 
 /**

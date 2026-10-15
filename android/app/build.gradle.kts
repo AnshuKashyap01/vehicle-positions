@@ -34,13 +34,17 @@ android {
     }
     buildFeatures { compose = true }
     testOptions.unitTests.isReturnDefaultValues = true
-    // MapAssetsTest reads the committed map assets from disk, so a change to them has to rerun it.
-    testOptions.unitTests.all { it.inputs.dir("src/main/assets/map") }
+    // MapAssetsTest and WindowColorsTest read committed files from disk, so a change to them has to rerun the tests.
+    testOptions.unitTests.all {
+        it.inputs.dir("src/main/assets/map")
+        it.inputs.files("src/main/res/values/colors.xml", "src/main/res/values-night/colors.xml")
+    }
 }
 
 dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.core.ktx)
+    implementation(libs.core.splashscreen)
     implementation(libs.activity.compose)
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)

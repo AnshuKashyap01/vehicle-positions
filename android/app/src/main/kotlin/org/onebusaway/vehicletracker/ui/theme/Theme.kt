@@ -1,32 +1,45 @@
 package org.onebusaway.vehicletracker.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.unit.dp
 
-// The banner paints these behind white text and the adherence panel draws them as text on the
-// light and the dark surface alike, so each is a mid-tone that reads in both themes.
-val StatusGreen = Color(0xFF1B873B)
-val StatusRed = Color(0xFFC62828)
-val StatusBlue = Color(0xFF1565C0)
-val StatusGrey = Color(0xFF757575)
+// The design's text fields have 8 dp corners; no other component here uses extraSmall.
+private val AppShapes = Shapes(extraSmall = RoundedCornerShape(8.dp))
 
-private val LightColors = lightColorScheme(
-    primary = Color(0xFF0B5394),
-    onPrimary = Color.White,
-)
-private val DarkColors = darkColorScheme(
-    primary = Color(0xFF7BB6E8),
-    onPrimary = Color(0xFF00253D),
-)
+// Outside AppTheme these are the light set, as MaterialTheme's own colours are: ScreenFlowTest draws
+// the screens without a theme around them.
+private val LocalStatusColors = staticCompositionLocalOf { LightStatusColors }
+private val LocalProblemColors = staticCompositionLocalOf { LightProblemColors }
 
 @Composable
 fun AppTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalStatusColors provides if (darkTheme) DarkStatusColors else LightStatusColors,
+        LocalProblemColors provides if (darkTheme) DarkProblemColors else LightProblemColors,
+    ) {
+        MaterialTheme(
+            colorScheme = if (darkTheme) DarkColors else LightColors,
+            typography = AppTypography,
+            shapes = AppShapes,
+            content = content,
+        )
+    }
+}
+
+/** The theme's colours that [MaterialTheme] has no role for. */
+object AppTheme {
+    val statusColors: StatusColors
+        @Composable @ReadOnlyComposable
+        get() = LocalStatusColors.current
+
+    val problemColors: ProblemColors
+        @Composable @ReadOnlyComposable
+        get() = LocalProblemColors.current
 }
