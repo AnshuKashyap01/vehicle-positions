@@ -88,6 +88,8 @@ func (s *Store) SaveLocation(ctx context.Context, loc *LocationReport) error {
 	if err := qtx.InsertLocationPoint(ctx, db.InsertLocationPointParams{
 		VehicleID: loc.VehicleID,
 		TripID:    loc.TripID,
+		RouteID:   loc.RouteID,
+		StartDate: loc.StartDate,
 		Latitude:  loc.Latitude,
 		Longitude: loc.Longitude,
 		Bearing:   optionalFloat(loc.Bearing),
@@ -105,7 +107,11 @@ func (s *Store) SaveLocation(ctx context.Context, loc *LocationReport) error {
 	return nil
 }
 
-// GetRecentLocations retrieves the latest position for each vehicle since the cutoff time.
+// GetRecentLocations retrieves the latest position for each vehicle since the
+// cutoff time. Every field the feed publishes is restored, route_id and
+// start_date included: the tracker is seeded from these rows at startup, and a
+// report that came back without them would publish a narrower TripDescriptor
+// than the driver sent — or, for a driver who named only a route, none at all.
 func (s *Store) GetRecentLocations(ctx context.Context, cutoff time.Time) ([]*LocationReport, error) {
 	rows, err := s.queries.GetRecentLocations(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true})
 	if err != nil {
@@ -117,6 +123,8 @@ func (s *Store) GetRecentLocations(ctx context.Context, cutoff time.Time) ([]*Lo
 		loc := &LocationReport{
 			VehicleID: row.VehicleID,
 			TripID:    row.TripID,
+			RouteID:   row.RouteID,
+			StartDate: row.StartDate,
 			Latitude:  row.Latitude,
 			Longitude: row.Longitude,
 			Timestamp: row.Timestamp,

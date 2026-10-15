@@ -30,6 +30,8 @@ type LocationPoint struct {
 	Timestamp  int64
 	ReceivedAt pgtype.Timestamptz
 	DriverID   string
+	RouteID    string
+	StartDate  string
 }
 
 type RefreshToken struct {

@@ -348,6 +348,83 @@ func TestStore_GetRecentLocations_ReturnsDriverID(t *testing.T) {
 	assert.Equal(t, "77", locs[0].DriverID, "driver_id must round-trip through save and GetRecentLocations")
 }
 
+// The tracker is seeded from GetRecentLocations at startup, and buildFeed turns
+// what it holds into a TripDescriptor, so a field that does not survive this
+// round trip is a field the feed stops publishing after a restart.
+func TestStore_GetRecentLocations_ReturnsTripContext(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	_, err := store.pool.Exec(ctx, "DELETE FROM location_points")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "DELETE FROM vehicles")
+	require.NoError(t, err)
+
+	loc := &LocationReport{
+		VehicleID: "bus-trip-context",
+		TripID:    "T1",
+		RouteID:   "R1",
+		StartDate: "20260906",
+		Latitude:  1.0,
+		Longitude: 2.0,
+		Timestamp: time.Now().Unix(),
+		DriverID:  "77",
+	}
+	require.NoError(t, store.SaveLocation(ctx, loc))
+
+	locs, err := store.GetRecentLocations(ctx, time.Now().Add(-5*time.Minute))
+	require.NoError(t, err)
+	require.Len(t, locs, 1)
+	assert.Equal(t, "T1", locs[0].TripID, "trip_id must round-trip through save and GetRecentLocations")
+	assert.Equal(t, "R1", locs[0].RouteID, "route_id must round-trip through save and GetRecentLocations")
+	assert.Equal(t, "20260906", locs[0].StartDate, "start_date must round-trip through save and GetRecentLocations")
+}
+
+// A driver who knows only the route is the case that degrades worst: route_id is
+// the only thing a consumer can match on, and losing it leaves buildFeed with
+// nothing to put in a TripDescriptor at all.
+func TestStore_GetRecentLocations_ReturnsRouteOnlyTripContext(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+
+	_, err := store.pool.Exec(ctx, "DELETE FROM location_points")
+	require.NoError(t, err)
+	_, err = store.pool.Exec(ctx, "DELETE FROM vehicles")
+	require.NoError(t, err)
+
+	loc := &LocationReport{
+		VehicleID: "bus-route-only",
+		RouteID:   "R1",
+		StartDate: "20260906",
+		Latitude:  1.0,
+		Longitude: 2.0,
+		Timestamp: time.Now().Unix(),
+	}
+	require.NoError(t, store.SaveLocation(ctx, loc))
+
+	locs, err := store.GetRecentLocations(ctx, time.Now().Add(-5*time.Minute))
+	require.NoError(t, err)
+	require.Len(t, locs, 1)
+	require.Empty(t, locs[0].TripID)
+
+	// The seeded report must still produce a TripDescriptor, which is what
+	// buildFeed omits when both trip_id and route_id are empty.
+	feed := buildFeed([]*VehicleState{{
+		VehicleID: locs[0].VehicleID,
+		TripID:    locs[0].TripID,
+		RouteID:   locs[0].RouteID,
+		StartDate: locs[0].StartDate,
+		Latitude:  locs[0].Latitude,
+		Longitude: locs[0].Longitude,
+		Timestamp: locs[0].Timestamp,
+	}}, nil)
+	require.Len(t, feed.Entity, 1)
+	trip := feed.Entity[0].Vehicle.Trip
+	require.NotNil(t, trip, "a seeded route-only vehicle must still carry a TripDescriptor")
+	assert.Equal(t, "R1", trip.GetRouteId())
+	assert.Equal(t, "20260906", trip.GetStartDate())
+}
+
 func TestStore_SaveLocation_MissingOptionalFieldsStoredAsNull(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()

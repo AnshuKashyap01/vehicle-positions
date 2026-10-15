@@ -553,7 +553,7 @@ func (q *Queries) GetLocationHistory(ctx context.Context, arg GetLocationHistory
 
 const getRecentLocations = `-- name: GetRecentLocations :many
 SELECT DISTINCT ON (vehicle_id)
-    vehicle_id, trip_id, latitude, longitude, bearing, speed, accuracy, timestamp, driver_id
+    vehicle_id, trip_id, route_id, start_date, latitude, longitude, bearing, speed, accuracy, timestamp, driver_id
 FROM location_points
 WHERE received_at > $1
 ORDER BY vehicle_id, received_at DESC
@@ -562,6 +562,8 @@ ORDER BY vehicle_id, received_at DESC
 type GetRecentLocationsRow struct {
 	VehicleID string
 	TripID    string
+	RouteID   string
+	StartDate string
 	Latitude  float64
 	Longitude float64
 	Bearing   pgtype.Float8
@@ -571,6 +573,10 @@ type GetRecentLocationsRow struct {
 	DriverID  string
 }
 
+// route_id and start_date are selected because the feed's TripDescriptor is
+// documented to carry what the driver sent: a seeded vehicle that came back
+// without them would publish a narrower descriptor than it did before the
+// restart, and a route-only vehicle would publish none at all.
 func (q *Queries) GetRecentLocations(ctx context.Context, receivedAt pgtype.Timestamptz) ([]GetRecentLocationsRow, error) {
 	rows, err := q.db.Query(ctx, getRecentLocations, receivedAt)
 	if err != nil {
@@ -583,6 +589,8 @@ func (q *Queries) GetRecentLocations(ctx context.Context, receivedAt pgtype.Time
 		if err := rows.Scan(
 			&i.VehicleID,
 			&i.TripID,
+			&i.RouteID,
+			&i.StartDate,
 			&i.Latitude,
 			&i.Longitude,
 			&i.Bearing,
@@ -778,13 +786,15 @@ func (q *Queries) GetVehicleByID(ctx context.Context, id string) (GetVehicleByID
 }
 
 const insertLocationPoint = `-- name: InsertLocationPoint :exec
-INSERT INTO location_points (vehicle_id, trip_id, latitude, longitude, bearing, speed, accuracy, timestamp, driver_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO location_points (vehicle_id, trip_id, route_id, start_date, latitude, longitude, bearing, speed, accuracy, timestamp, driver_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 `
 
 type InsertLocationPointParams struct {
 	VehicleID string
 	TripID    string
+	RouteID   string
+	StartDate string
 	Latitude  float64
 	Longitude float64
 	Bearing   pgtype.Float8
@@ -798,6 +808,8 @@ func (q *Queries) InsertLocationPoint(ctx context.Context, arg InsertLocationPoi
 	_, err := q.db.Exec(ctx, insertLocationPoint,
 		arg.VehicleID,
 		arg.TripID,
+		arg.RouteID,
+		arg.StartDate,
 		arg.Latitude,
 		arg.Longitude,
 		arg.Bearing,
