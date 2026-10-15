@@ -199,12 +199,14 @@ private fun MapFileNote(state: MapFileState, modifier: Modifier = Modifier) {
 }
 
 /**
- * The note for a first copy that could not be fetched. Only a failure that can pass by itself
- * says "will retry"; the rest need the driver or the agency to change something.
+ * The note for a first copy that could not be fetched. Only a failure the app retries on a timer
+ * says "will retry"; an unexpected one waits for the app to come back to the front, and the rest
+ * need the driver or the agency to change something.
  */
 @StringRes
 internal fun mapFailureNote(reason: MapFailure): Int = when (reason) {
-    MapFailure.NETWORK, MapFailure.UNEXPECTED -> R.string.tracking_map_retrying
+    MapFailure.NETWORK -> R.string.tracking_map_retrying
+    MapFailure.UNEXPECTED -> R.string.tracking_map_retry_on_open
     MapFailure.NO_SPACE -> R.string.tracking_map_no_space
     MapFailure.INVALID_FILE -> R.string.tracking_map_unusable
     MapFailure.CLEARTEXT_BLOCKED -> R.string.tracking_map_needs_https

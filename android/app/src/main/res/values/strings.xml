@@ -102,6 +102,8 @@
     <string name="tracking_map_downloading">Downloading map, %1$d%%</string>
     <string name="tracking_map_no_space">Not enough space for the map</string>
     <string name="tracking_map_retrying">Map not downloaded yet, will retry</string>
+    <!-- Something went wrong on the phone, such as the map record failing to save. The app tries again only when it next comes to the front, or a day later. -->
+    <string name="tracking_map_retry_on_open">Map not downloaded, will try again when the app is next opened</string>
     <!-- The map URL gives something that is not a map. The app leaves that URL alone for a day. -->
     <string name="tracking_map_unusable">Map file is not usable, tell your agency</string>
     <!-- The map URL is plain http, which the phone refuses. The app tries again only when it next comes to the front. -->
