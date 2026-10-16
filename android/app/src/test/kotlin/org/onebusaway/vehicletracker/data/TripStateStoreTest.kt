@@ -137,20 +137,50 @@ class TripStateStoreTest {
         assertFalse(dataStore.data.first().contains(stringPreferencesKey("trip_location_id")))
     }
 
+    /** Starts trip [tripDbId] as [startedBy], then ends it on this phone only while [signedIn] is signed in. */
+    private suspend fun TripStateStore.endLocally(tripDbId: Long, startedBy: String?, signedIn: String? = startedBy) {
+        saveActiveTrip(ActiveTrip(tripDbId, "trip-0830", "bus-1", "5", "20260804", 100L, driverId = startedBy))
+        endActiveTripLocally(signedInDriverId = signedIn)
+    }
+
     @Test fun `a trip ended on this phone keeps its server id and driver until the end is confirmed`() = runTest {
         val dataStore = newDataStore()
         val store = DataStoreTripStateStore(dataStore, nairobi)
-        store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L))
 
-        store.endActiveTripLocally(driverId = "2")
+        store.endLocally(7L, startedBy = "2")
 
         assertNull(store.activeTrip.first())
-        assertEquals(UnconfirmedEnd(7L, "2"), store.unconfirmedEnd.first())
+        assertEquals(listOf(UnconfirmedEnd(7L, "2")), store.unconfirmedEnds.first())
 
-        store.clearUnconfirmedEnd()
+        store.clearUnconfirmedEnd(7L)
 
-        assertNull(store.unconfirmedEnd.first())
-        assertFalse(dataStore.data.first().contains(stringPreferencesKey("unconfirmed_end_driver_id")))
+        assertEquals(emptyList<UnconfirmedEnd>(), store.unconfirmedEnds.first())
+        assertFalse(dataStore.data.first().contains(stringPreferencesKey("unconfirmed_ends")))
+    }
+
+    @Test fun `a second driver's end on this phone does not replace the first's`() = runTest {
+        val store = DataStoreTripStateStore(newDataStore(), nairobi)
+
+        store.endLocally(7L, startedBy = "1")
+        store.endLocally(8L, startedBy = "2")
+
+        assertEquals(listOf(UnconfirmedEnd(7L, "1"), UnconfirmedEnd(8L, "2")), store.unconfirmedEnds.first())
+    }
+
+    @Test fun `a trip ended after another driver signs in is kept under the driver who started it`() = runTest {
+        val store = DataStoreTripStateStore(newDataStore(), nairobi)
+
+        store.endLocally(7L, startedBy = "1", signedIn = "2")
+
+        assertEquals(listOf(UnconfirmedEnd(7L, "1")), store.unconfirmedEnds.first())
+    }
+
+    @Test fun `a trip saved before drivers were recorded is kept under the driver signed in`() = runTest {
+        val store = DataStoreTripStateStore(newDataStore(), nairobi)
+
+        store.endLocally(7L, startedBy = null, signedIn = "2")
+
+        assertEquals(listOf(UnconfirmedEnd(7L, "2")), store.unconfirmedEnds.first())
     }
 
     @Test fun `a trip ended with no readable driver does not keep an earlier driver`() = runTest {
@@ -158,26 +188,83 @@ class TripStateStoreTest {
         val store = DataStoreTripStateStore(dataStore, nairobi)
         // Left behind by hand, as a write that never cleared it would.
         dataStore.edit { it[stringPreferencesKey("unconfirmed_end_driver_id")] = "1" }
-        store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L))
 
-        store.endActiveTripLocally(driverId = null)
+        store.endLocally(7L, startedBy = null, signedIn = null)
 
-        assertEquals(UnconfirmedEnd(7L, null), store.unconfirmedEnd.first())
+        assertEquals(listOf(UnconfirmedEnd(7L, null)), store.unconfirmedEnds.first())
     }
 
     @Test fun `an end stored before drivers were recorded reads back without a driver`() = runTest {
         val dataStore = newDataStore()
         dataStore.edit { it[longPreferencesKey("unconfirmed_end_trip_db_id")] = 7L }
 
-        assertEquals(UnconfirmedEnd(7L, null), DataStoreTripStateStore(dataStore, nairobi).unconfirmedEnd.first())
+        assertEquals(listOf(UnconfirmedEnd(7L, null)), DataStoreTripStateStore(dataStore, nairobi).unconfirmedEnds.first())
+    }
+
+    @Test fun `an end left in the old single slot survives the next end on this phone`() = runTest {
+        val dataStore = newDataStore()
+        // As the build before ends were kept per driver wrote it.
+        dataStore.edit { prefs ->
+            prefs[longPreferencesKey("unconfirmed_end_trip_db_id")] = 7L
+            prefs[stringPreferencesKey("unconfirmed_end_driver_id")] = "1"
+        }
+        val store = DataStoreTripStateStore(dataStore, nairobi)
+
+        assertEquals(listOf(UnconfirmedEnd(7L, "1")), store.unconfirmedEnds.first())
+
+        store.endLocally(8L, startedBy = "2")
+
+        assertEquals(listOf(UnconfirmedEnd(7L, "1"), UnconfirmedEnd(8L, "2")), store.unconfirmedEnds.first())
+        val prefs = dataStore.data.first()
+        assertFalse(prefs.contains(longPreferencesKey("unconfirmed_end_trip_db_id")))
+        assertFalse(prefs.contains(stringPreferencesKey("unconfirmed_end_driver_id")))
+    }
+
+    @Test fun `confirming an end left in the old single slot clears it`() = runTest {
+        val dataStore = newDataStore()
+        dataStore.edit { prefs ->
+            prefs[longPreferencesKey("unconfirmed_end_trip_db_id")] = 7L
+            prefs[stringPreferencesKey("unconfirmed_end_driver_id")] = "1"
+        }
+        val store = DataStoreTripStateStore(dataStore, nairobi)
+
+        store.clearUnconfirmedEnd(7L)
+
+        assertEquals(emptyList<UnconfirmedEnd>(), store.unconfirmedEnds.first())
+    }
+
+    @Test fun `confirming one end clears only that one`() = runTest {
+        val store = DataStoreTripStateStore(newDataStore(), nairobi)
+        store.endLocally(7L, startedBy = "1")
+        store.endLocally(8L, startedBy = "2")
+
+        store.clearUnconfirmedEnd(7L)
+
+        assertEquals(listOf(UnconfirmedEnd(8L, "2")), store.unconfirmedEnds.first())
+    }
+
+    @Test fun `ending the same trip twice keeps one end`() = runTest {
+        val store = DataStoreTripStateStore(newDataStore(), nairobi)
+
+        store.endLocally(7L, startedBy = "1")
+        store.endLocally(7L, startedBy = "1")
+
+        assertEquals(listOf(UnconfirmedEnd(7L, "1")), store.unconfirmedEnds.first())
+    }
+
+    @Test fun `an unreadable list of ends reads as none instead of failing`() = runTest {
+        val dataStore = newDataStore()
+        dataStore.edit { it[stringPreferencesKey("unconfirmed_ends")] = "not json" }
+
+        assertEquals(emptyList<UnconfirmedEnd>(), DataStoreTripStateStore(dataStore, nairobi).unconfirmedEnds.first())
     }
 
     @Test fun `ending locally with no stored trip leaves no end to send`() = runTest {
         val store = DataStoreTripStateStore(newDataStore(), nairobi)
 
-        store.endActiveTripLocally(driverId = "2")
+        store.endActiveTripLocally(signedInDriverId = "2")
 
-        assertNull(store.unconfirmedEnd.first())
+        assertEquals(emptyList<UnconfirmedEnd>(), store.unconfirmedEnds.first())
     }
 
     @Test fun `legacyGtfsTripId treats a copy of the route id as no trip id`() {
