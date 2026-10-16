@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,6 +34,22 @@ fun routeColorArgb(hex: String): Long? {
 }
 
 /**
+ * A route's short name and colours with the feed's hex already read, so a list of badges parses nothing while it
+ * scrolls. A null colour leaves the badge on the theme's own, as [routeColorArgb] explains.
+ */
+@Immutable
+data class RouteBadgeModel(val shortName: String, val color: Color?, val textColor: Color?) {
+    companion object {
+        /** [color] and [textColor] as the feed writes them: six hex digits. */
+        fun of(shortName: String, color: String, textColor: String) = RouteBadgeModel(
+            shortName = shortName,
+            color = routeColorArgb(color)?.let { Color(it) },
+            textColor = routeColorArgb(textColor)?.let { Color(it) },
+        )
+    }
+}
+
+/**
  * A route's short name on its GTFS colour, as riders see it. [color] and [textColor] are the feed's six hex
  * digits; the route list reads them off the route, and the Tracking screen off the trip it keeps. The trip
  * bar draws it larger, in [style] and [shape], centred in whatever size [modifier] gives it.
@@ -46,8 +63,19 @@ fun RouteBadge(
     style: TextStyle = MaterialTheme.typography.titleMedium,
     shape: Shape = RoundedCornerShape(6.dp),
 ) {
-    val background = routeColorArgb(color)?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
-    val foreground = routeColorArgb(textColor)?.let { Color(it) } ?: MaterialTheme.colorScheme.onPrimary
+    RouteBadge(RouteBadgeModel.of(shortName, color, textColor), modifier, style, shape)
+}
+
+/** [route] as a badge, for a screen that read its routes' colours once when they loaded. */
+@Composable
+fun RouteBadge(
+    route: RouteBadgeModel,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.titleMedium,
+    shape: Shape = RoundedCornerShape(6.dp),
+) {
+    val background = route.color ?: MaterialTheme.colorScheme.primary
+    val foreground = route.textColor ?: MaterialTheme.colorScheme.onPrimary
     Box(
         modifier = modifier
             .background(background, shape)
@@ -55,7 +83,7 @@ fun RouteBadge(
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = shortName.ifEmpty { stringResource(R.string.routes_badge_placeholder) },
+            text = route.shortName.ifEmpty { stringResource(R.string.routes_badge_placeholder) },
             color = foreground,
             style = style,
             fontWeight = FontWeight.SemiBold,

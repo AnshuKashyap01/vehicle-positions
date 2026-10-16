@@ -155,7 +155,8 @@ internal val DarkStatusColors = StatusColors(
 /**
  * A reporting problem (no network, no GPS): a calm dark line with an amber [icon], because red already means
  * early. [iconOnSurface] is the same warning on the trip bar and in a dialog, and [signedOut] is the card that
- * takes the status card's place once reports have stopped.
+ * takes the status card's place once reports have stopped. [attentionContainer] is the pale banner a setup
+ * screen shows when something stops the driver, with [iconOnSurface] for its icon.
  */
 @Immutable
 data class ProblemColors(
@@ -164,6 +165,7 @@ data class ProblemColors(
     val icon: Color,
     val iconOnSurface: Color,
     val signedOut: SignedOutColors,
+    val attentionContainer: Color,
 )
 
 /** [content] on [container], and the icon disc and Sign in button in [accent] with [onAccent] on them. */
@@ -179,6 +181,7 @@ internal val LightProblemColors = ProblemColors(
     icon = Amber,
     iconOnSurface = Color(0xFFB06000),
     signedOut = SignedOutColors(container = Ink, content = Color(0xFFF1F3F4), accent = Amber, onAccent = Ink),
+    attentionContainer = Color(0xFFFEF7E0),
 )
 
 // An ink card would sink into the dark map, so in the dark theme Signed out turns amber with ink on it.
@@ -188,4 +191,5 @@ internal val DarkProblemColors = ProblemColors(
     icon = Amber,
     iconOnSurface = Amber,
     signedOut = SignedOutColors(container = Amber, content = Ink, accent = Ink, onAccent = Amber),
+    attentionContainer = Color(0xFF3A3220),
 )

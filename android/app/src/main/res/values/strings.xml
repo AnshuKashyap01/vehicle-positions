@@ -11,6 +11,14 @@
     <string name="login_error_invalid_credentials">Invalid email or password.</string>
     <string name="login_error_network">Could not reach the server. Check your connection.</string>
 
+    <!-- The top of the route and run steps: Back, then the trip so far as chips, each going back to its step. -->
+    <string name="setup_navigate_up">Navigate up</string>
+    <string name="setup_trip_so_far">Trip so far</string>
+    <!-- Read before the bus's number on its chip, e.g. "Bus, 4317". -->
+    <string name="setup_bus">Bus</string>
+    <!-- The route's chip, read out, e.g. "Route 7". -->
+    <string name="setup_route">Route %1$s</string>
+
     <!-- Vehicle selection screen -->
     <string name="vehicles_title">Select a Vehicle</string>
     <string name="vehicles_empty">No vehicles are assigned to you.</string>
