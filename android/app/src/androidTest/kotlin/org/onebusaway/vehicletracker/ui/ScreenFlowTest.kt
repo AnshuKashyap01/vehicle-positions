@@ -819,7 +819,7 @@ class ScreenFlowTest {
     private val numberedRoutes = listOf("1", "2", "3", "4", "5", "7").map { route("R$it", it) }
 
     private fun showRoutes(state: RoutesUiState, onRouteClick: (String) -> Unit = {}, onRetry: () -> Unit = {}) {
-        compose.setContent { RoutesScreenContent(state, { onRouteClick(it.id) }, onQueryChange = {}, onRetry) }
+        compose.setContent { RoutesScreenContent(state, "4317", {}, {}, { onRouteClick(it.id) }, onQueryChange = {}, onRetry) }
     }
 
     @Test
@@ -885,14 +885,16 @@ class ScreenFlowTest {
 
         compose.onNodeWithText(getString(R.string.routes_no_schedule)).assertIsDisplayed()
         compose.onNodeWithText(getString(R.string.routes_no_schedule_detail)).assertIsDisplayed()
-        compose.onNode(hasClickAction()).assertDoesNotExist()
+        // Only an operator can load a schedule: there is nothing to try again.
+        compose.onNodeWithText(getString(R.string.routes_retry_button)).assertDoesNotExist()
+        compose.onNodeWithText(getString(R.string.routes_check_again)).assertDoesNotExist()
     }
 
     @Test
     fun routesScreen_triesAgainAfterAFailedLoadButNotWhenSignedOut() {
         var reloads = 0
         var state by mutableStateOf<RoutesUiState>(RoutesUiState.Error(retry = true))
-        compose.setContent { RoutesScreenContent(state, onRouteClick = {}, onQueryChange = {}, onRetry = { reloads++ }) }
+        compose.setContent { RoutesScreenContent(state, "4317", {}, {}, onRouteClick = {}, onQueryChange = {}, onRetry = { reloads++ }) }
 
         compose.onNodeWithText(getString(R.string.routes_error_detail)).assertIsDisplayed()
         compose.onNodeWithText(getString(R.string.routes_retry_button)).performClick()
@@ -939,6 +941,9 @@ class ScreenFlowTest {
                 state = state,
                 route = badge7,
                 vehicleId = "4317",
+                onBack = {},
+                onBusClick = {},
+                onRouteClick = {},
                 onRunClick = { calls.tapped = it },
                 onReload = { calls.reloads++ },
                 onTryAgain = { calls.triesAgain++ },
@@ -1009,7 +1014,8 @@ class ScreenFlowTest {
         val calls = RunCalls()
         compose.setContent {
             RunsScreenContent(
-                state, badge7, "4317", onRunClick = {}, onReload = { calls.reloads++ }, onTryAgain = { calls.triesAgain++ },
+                state, badge7, "4317", onBack = {}, onBusClick = {}, onRouteClick = {},
+                onRunClick = {}, onReload = { calls.reloads++ }, onTryAgain = { calls.triesAgain++ },
                 onChangeBus = { calls.changeBus++ }, onChooseAnotherRoute = {},
             )
         }
@@ -1048,7 +1054,10 @@ class ScreenFlowTest {
         var state by mutableStateOf<RunsUiState>(RunsUiState.Error(retry = true))
         var reloads = 0
         compose.setContent {
-            RunsScreenContent(state, badge7, "4317", {}, onReload = { reloads++ }, onTryAgain = {}, onChangeBus = {}, onChooseAnotherRoute = {})
+            RunsScreenContent(
+                state, badge7, "4317", onBack = {}, onBusClick = {}, onRouteClick = {},
+                onRunClick = {}, onReload = { reloads++ }, onTryAgain = {}, onChangeBus = {}, onChooseAnotherRoute = {},
+            )
         }
 
         compose.onNodeWithText(getString(R.string.runs_error_detail)).assertIsDisplayed()
@@ -1058,5 +1067,41 @@ class ScreenFlowTest {
         state = RunsUiState.Error(retry = false)
         compose.onNodeWithText(getString(R.string.runs_error_message)).assertIsDisplayed()
         compose.onNodeWithText(getString(R.string.runs_retry_button)).assertDoesNotExist()
+    }
+
+    // --- The header over the route and run steps ---
+
+    @Test
+    fun setupHeader_eachChipGoesBackToItsStep() {
+        var back = 0
+        var bus = 0
+        var routeStep = 0
+        compose.setContent {
+            RunsScreenContent(
+                board(), badge7, "4317", onBack = { back++ }, onBusClick = { bus++ }, onRouteClick = { routeStep++ },
+                onRunClick = {}, onReload = {}, onTryAgain = {}, onChangeBus = {}, onChooseAnotherRoute = {},
+            )
+        }
+
+        compose.onNodeWithContentDescription(getString(R.string.setup_trip_so_far)).assertExists()
+        compose.onNodeWithText(getString(R.string.setup_step_run)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(getString(R.string.setup_navigate_up)).performClick()
+        compose.onNode(hasText("4317") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription(getString(R.string.setup_route, "7")).performClick()
+        assertEquals(listOf(1, 1, 1), listOf(back, bus, routeStep))
+    }
+
+    @Test
+    fun setupHeader_namesTheOnlyBusWithoutOfferingToChangeIt() {
+        compose.setContent {
+            RoutesScreenContent(
+                RoutesUiState.Loading, busId = "4317", onBack = null, onBusClick = null,
+                onRouteClick = {}, onQueryChange = {}, onRetry = {},
+            )
+        }
+
+        compose.onNodeWithText(getString(R.string.setup_step_route)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(getString(R.string.setup_navigate_up)).assertDoesNotExist()
+        compose.onNode(hasText("4317")).assertIsDisplayed().assert(hasClickAction().not())
     }
 }

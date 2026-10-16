@@ -18,6 +18,9 @@
     <string name="setup_bus">Bus</string>
     <!-- The route's chip, read out, e.g. "Route 7". -->
     <string name="setup_route">Route %1$s</string>
+    <!-- After the chips: the step the driver is on. -->
+    <string name="setup_step_route">Route</string>
+    <string name="setup_step_run">Run</string>
 
     <!-- In a setup screen's search field, once something is typed. -->
     <string name="setup_clear_search">Clear search</string>

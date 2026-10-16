@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
@@ -69,6 +70,15 @@ private fun arg(value: String): String = Uri.encode(value)
 // Reading one back needs no matching decode: NavDeepLink.getMatchingPathArguments already runs
 // every captured path argument through NavUriUtils.decode before it reaches the bundle.
 private fun NavBackStackEntry.pathArg(name: String): String = arguments?.getString(name).orEmpty()
+
+/** Whether the bus step is behind this screen. It is not once the one-bus skip has taken its place. */
+private fun NavController.hasBusStep(): Boolean =
+    try {
+        getBackStackEntry(ROUTE_VEHICLES)
+        true
+    } catch (e: IllegalArgumentException) {
+        false
+    }
 
 /**
  * Back to the bus step, to choose another bus. After the one-bus skip there is no bus step to go back to, so a fresh
@@ -177,8 +187,15 @@ fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltVi
             arguments = listOf(navArgument(ARG_VEHICLE_ID) { type = NavType.StringType }),
         ) { backStackEntry ->
             val vehicleId = backStackEntry.pathArg(ARG_VEHICLE_ID)
+            // A driver whose only bus was chosen for them has no bus step to go back to: no Back, and the bus chip
+            // only says which bus it is.
+            val hasBusStep = remember(backStackEntry) { navController.hasBusStep() }
+            val backToBuses: (() -> Unit)? = if (hasBusStep) ({ navController.popBackStack() }) else null
             ClearOfSystemBars {
                 RoutesScreen(
+                    busId = vehicleId,
+                    onBack = backToBuses,
+                    onBusClick = backToBuses,
                     onRouteSelected = { route ->
                         val badge = route.badge
                         navController.navigate(
@@ -198,7 +215,8 @@ fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltVi
                 navArgument(ARG_ROUTE_COLOR) { defaultValue = "" },
                 navArgument(ARG_ROUTE_TEXT_COLOR) { defaultValue = "" },
             ),
-        ) {
+        ) { backStackEntry ->
+            val hasBusStep = remember(backStackEntry) { navController.hasBusStep() }
             ClearOfSystemBars {
                 // The arguments reach RunsViewModel through its SavedStateHandle.
                 RunsScreen(
@@ -207,6 +225,9 @@ fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltVi
                             popUpTo(0) { inclusive = true }
                         }
                     },
+                    onBack = { navController.popBackStack() },
+                    onBusClick = if (hasBusStep) ({ navController.toBusStep() }) else null,
+                    onRouteClick = { navController.popBackStack(ROUTE_ROUTES, inclusive = false) },
                     onChangeBus = { navController.toBusStep() },
                     onChooseAnotherRoute = { navController.popBackStack() },
                 )

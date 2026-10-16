@@ -2,6 +2,7 @@ package org.onebusaway.vehicletracker.ui.routes
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -41,18 +43,21 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.onebusaway.vehicletracker.R
 import org.onebusaway.vehicletracker.ui.components.DelayedSpinner
 import org.onebusaway.vehicletracker.ui.components.EmptyState
+import org.onebusaway.vehicletracker.ui.components.ScrolledUnderDivider
 import org.onebusaway.vehicletracker.ui.components.SearchField
+import org.onebusaway.vehicletracker.ui.components.SetupHeader
 
 private const val GRID_COLUMNS = 4
 private val BadgeGap = 10.dp
 private val BigBadgeShape = RoundedCornerShape(14.dp)
 private val RowBadgeShape = RoundedCornerShape(10.dp)
 
-// The title sits where the bus step's does until the header with the trip so far takes the space above it.
-private val TitleTop = 64.dp
-
+/** [onBack] and [onBusClick] are null when the bus step was skipped: there is no bus step to go back to. */
 @Composable
 fun RoutesScreen(
+    busId: String,
+    onBack: (() -> Unit)?,
+    onBusClick: (() -> Unit)?,
     onRouteSelected: (RouteItem) -> Unit,
     viewModel: RoutesViewModel = hiltViewModel(),
 ) {
@@ -60,6 +65,9 @@ fun RoutesScreen(
 
     RoutesScreenContent(
         state = state,
+        busId = busId,
+        onBack = onBack,
+        onBusClick = onBusClick,
         onRouteClick = onRouteSelected,
         onQueryChange = viewModel::onQueryChange,
         onRetry = viewModel::retry,
@@ -68,18 +76,38 @@ fun RoutesScreen(
 
 /**
  * The route step: the routes the driver drove last as big badges, then every route as a row with its name, or as a
- * grid of badges when the feed names none of them. Everything is an item of one grid, so the page scrolls as one.
+ * grid of badges when the feed names none of them. Under the header with the trip so far, everything is an item of
+ * one grid, so the page scrolls as one.
  */
 @Composable
 fun RoutesScreenContent(
     state: RoutesUiState,
+    busId: String,
+    onBack: (() -> Unit)?,
+    onBusClick: (() -> Unit)?,
+    onRouteClick: (RouteItem) -> Unit,
+    onQueryChange: (String) -> Unit,
+    onRetry: () -> Unit,
+) {
+    val gridState = rememberLazyGridState()
+    Column(Modifier.fillMaxSize()) {
+        SetupHeader(busId = busId, step = stringResource(R.string.setup_step_route), onBack = onBack, onBusClick = onBusClick)
+        ScrolledUnderDivider({ gridState.canScrollBackward })
+        RouteGrid(state, gridState, onRouteClick, onQueryChange, onRetry)
+    }
+}
+
+@Composable
+private fun RouteGrid(
+    state: RoutesUiState,
+    gridState: LazyGridState,
     onRouteClick: (RouteItem) -> Unit,
     onQueryChange: (String) -> Unit,
     onRetry: () -> Unit,
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(GRID_COLUMNS),
-        state = rememberLazyGridState(),
+        state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(BadgeGap),
@@ -88,7 +116,7 @@ fun RoutesScreenContent(
             Text(
                 text = stringResource(R.string.routes_title),
                 style = MaterialTheme.typography.headlineLarge,
-                modifier = Modifier.padding(start = 8.dp, top = TitleTop, bottom = 18.dp).semantics { heading() },
+                modifier = Modifier.padding(start = 8.dp, top = 8.dp, bottom = 18.dp).semantics { heading() },
             )
         }
         when (state) {

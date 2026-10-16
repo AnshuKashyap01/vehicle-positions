@@ -63,6 +63,7 @@ import org.onebusaway.vehicletracker.ui.components.AttentionBanner
 import org.onebusaway.vehicletracker.ui.components.DelayedSpinner
 import org.onebusaway.vehicletracker.ui.components.EmptyState
 import org.onebusaway.vehicletracker.ui.components.ScrolledUnderDivider
+import org.onebusaway.vehicletracker.ui.components.SetupHeader
 import org.onebusaway.vehicletracker.ui.permissions.rememberPermissionFlow
 import org.onebusaway.vehicletracker.ui.routes.RouteBadgeModel
 import org.onebusaway.vehicletracker.ui.theme.AppMotion
@@ -72,12 +73,13 @@ import java.time.format.DateTimeFormatter
 
 private val TagShape = RoundedCornerShape(8.dp)
 
-// The title sits where the bus step's does until the header with the trip so far takes the space above it.
-private val TitleTop = 64.dp
-
+/** [onBusClick] is null when the bus step was skipped: there is no bus step to go back to. */
 @Composable
 fun RunsScreen(
     onTripStarted: () -> Unit,
+    onBack: () -> Unit,
+    onBusClick: (() -> Unit)?,
+    onRouteClick: () -> Unit,
     onChangeBus: () -> Unit,
     onChooseAnotherRoute: () -> Unit,
     viewModel: RunsViewModel = hiltViewModel(),
@@ -95,6 +97,9 @@ fun RunsScreen(
         state = state,
         route = viewModel.route,
         vehicleId = viewModel.vehicleId,
+        onBack = onBack,
+        onBusClick = onBusClick,
+        onRouteClick = onRouteClick,
         onRunClick = { runId ->
             pendingRunId = runId
             permissionFlow.begin()
@@ -108,14 +113,17 @@ fun RunsScreen(
 
 /**
  * The run step as a departure board: big start times, a switch between the route's two directions, a line at "now",
- * and the run under way or next tagged. The title, the switch and the date stay put; only the board scrolls, and it
- * opens at the run just gone so the driver sees where the day is without scrolling.
+ * and the run under way or next tagged. The header, the title, the switch and the date stay put; only the board
+ * scrolls, and it opens at the run just gone so the driver sees where the day is without scrolling.
  */
 @Composable
 fun RunsScreenContent(
     state: RunsUiState,
     route: RouteBadgeModel,
     vehicleId: String,
+    onBack: () -> Unit,
+    onBusClick: (() -> Unit)?,
+    onRouteClick: () -> Unit,
     onRunClick: (String) -> Unit,
     onReload: () -> Unit,
     onTryAgain: () -> Unit,
@@ -123,10 +131,18 @@ fun RunsScreenContent(
     onChooseAnotherRoute: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize()) {
+        SetupHeader(
+            busId = vehicleId,
+            step = stringResource(R.string.setup_step_run),
+            onBack = onBack,
+            onBusClick = onBusClick,
+            route = route,
+            onRouteClick = onRouteClick,
+        )
         Text(
             text = stringResource(R.string.runs_title),
             style = MaterialTheme.typography.headlineLarge,
-            modifier = Modifier.padding(start = 24.dp, top = TitleTop, end = 24.dp, bottom = 18.dp).semantics { heading() },
+            modifier = Modifier.padding(start = 24.dp, top = 8.dp, end = 24.dp, bottom = 18.dp).semantics { heading() },
         )
         when (state) {
             is RunsUiState.Loading -> DelayedSpinner()
