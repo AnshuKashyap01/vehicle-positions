@@ -83,8 +83,8 @@ import org.maplibre.android.style.layers.PropertyFactory.iconIgnorePlacement
 import org.maplibre.android.style.layers.PropertyFactory.iconImage
 import org.maplibre.android.style.layers.PropertyFactory.lineCap
 import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineDasharray
 import org.maplibre.android.style.layers.PropertyFactory.lineJoin
-import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.PropertyFactory.visibility
 import org.maplibre.android.style.layers.SymbolLayer
@@ -96,31 +96,35 @@ import org.onebusaway.vehicletracker.data.map.MapFailure
 import org.onebusaway.vehicletracker.data.map.MapFileState
 import org.onebusaway.vehicletracker.data.map.downloadPercent
 import org.onebusaway.vehicletracker.engine.Adherence
-import org.onebusaway.vehicletracker.engine.GeoPoint
 import org.onebusaway.vehicletracker.engine.ShapeGeometry
 import org.onebusaway.vehicletracker.engine.TripGeometry
 import java.io.File
 import kotlin.math.roundToInt
 
-// The line's widths and the off-route look are iOS's, from RouteMapViewController and MapGlyphs
-// (spec §6.3); the stops are the design's. MapLibre measures in density-independent pixels, as
+// The line's widths are iOS's, from RouteMapViewController and MapGlyphs (spec §6.3); the stops
+// and the off-route line are the design's. MapLibre measures in density-independent pixels, as
 // iOS does in points.
 private const val CASING_WIDTH = 10f
 private const val ROUTE_WIDTH = 6f
-private const val OFF_ROUTE_OPACITY = 0.35f
+
+/**
+ * The off-route line's dots: 2 long and 6 apart at 2.5 wide. MapLibre counts dashes in line
+ * widths, and round caps make them dots.
+ */
+private const val OFF_ROUTE_LINK_WIDTH = 2.5f
+private val OFF_ROUTE_DASHES = arrayOf(0.8f, 2.4f)
 private const val STOP_RING_WIDTH = 2f
 private const val MARKED_STOP_RING_WIDTH = 3f
 
 /**
  * Across, ring included: a stop is 12, the last stop 17 and the next 23, in a white halo 25
- * across. MapLibre adds the ring outside the radius.
+ * across. Where an off-route vehicle was matched looks like the last stop. MapLibre adds the ring
+ * outside the radius.
  */
 private const val STOP_RADIUS = 6f - STOP_RING_WIDTH
 private const val LAST_STOP_RADIUS = 8.5f - MARKED_STOP_RING_WIDTH
 private const val NEXT_STOP_RADIUS = 11.5f - MARKED_STOP_RING_WIDTH
 private const val NEXT_STOP_HALO_RADIUS = 12.5f
-private const val SNAPPED_OUTER_RADIUS = 5f
-private const val SNAPPED_INNER_RADIUS = 3f
 private const val FIT_PADDING_DP = 40
 private const val ATTRIBUTION_MARGIN_DP = 16f
 private const val LABEL_TEXT_SP = 13f
@@ -132,13 +136,14 @@ private const val ROUTE_SOURCE = "route"
 private const val STOPS_SOURCE = "stops"
 private const val NEXT_STOP_SOURCE = "next-stop"
 private const val SNAPPED_SOURCE = "snapped"
+private const val OFF_ROUTE_SOURCE = "off-route"
 private const val CASING_LAYER = "route-casing"
 private const val ROUTE_LAYER = "route-line"
 private const val STOPS_LAYER = "stops"
 private const val NEXT_STOP_HALO_LAYER = "next-stop-halo"
 private const val NEXT_STOP_LABEL_LAYER = "next-stop-label"
-private const val SNAPPED_OUTER_LAYER = "snapped-outer"
-private const val SNAPPED_INNER_LAYER = "snapped-inner"
+private const val OFF_ROUTE_LAYER = "off-route-link"
+private const val SNAPPED_LAYER = "snapped"
 private const val NEXT_STOP_LABEL_IMAGE = "next-stop-label"
 
 private const val FOLLOW_ANIMATION_MS = 750L
@@ -150,14 +155,14 @@ private const val RETURN_TO_FOLLOWING_MS = 10_000L
 fun Context.glEsVersion(): Int = getSystemService(ActivityManager::class.java).deviceConfigurationInfo.reqGlEsVersion
 
 /**
- * The trip on a map, as spec §6.3 has it: the shape in the route colour over a casing,
- * the stops with the next one enlarged and named, the vehicle pointed along its course, and the
- * matched position while it is off the route. The camera follows heading-up with the vehicle a
- * third of the way up the part of the map that [contentPadding], the screen's own cards and bars
- * over it, leaves uncovered. Under it is the agency's street map once the file is on the phone,
- * and a plain background until then, with a note while the first copy downloads. The note and
- * Re-center sit at the bottom left, inside [controlsPadding]. The vehicle is ringed in
- * [vehicleRing], ARGB: the status colour of how it is keeping to the schedule.
+ * The trip on a map: the shape in the route colour over a casing, the stops with the next one
+ * enlarged and named, and the vehicle pointed along its course and ringed in [vehicleRing], ARGB,
+ * the status colour of how it is keeping to the schedule. Off the route, a dotted line joins it to
+ * where it was matched. The camera follows heading-up with the vehicle a third of the way up the
+ * part of the map that [contentPadding], the screen's own cards and bars over it, leaves
+ * uncovered. Under it is the agency's street map once the file is on the phone, and a plain
+ * background until then, with a note while the first copy downloads. The note and Re-center sit
+ * at the bottom left, inside [controlsPadding].
  */
 @Composable
 fun RouteMap(
@@ -536,6 +541,7 @@ private class RouteMapController(
         style.addSource(GeoJsonSource(STOPS_SOURCE))
         style.addSource(GeoJsonSource(NEXT_STOP_SOURCE))
         style.addSource(GeoJsonSource(SNAPPED_SOURCE))
+        style.addSource(GeoJsonSource(OFF_ROUTE_SOURCE))
         // Casing first: layers draw in the order they are added, so the line sits centred on the
         // wider one underneath it.
         addRouteLayer(
@@ -594,16 +600,20 @@ private class RouteMapController(
             ),
         )
         style.addLayer(
-            CircleLayer(SNAPPED_OUTER_LAYER, SNAPPED_SOURCE).withProperties(
-                circleRadius(SNAPPED_OUTER_RADIUS),
-                circleColor(haloColor),
+            LineLayer(OFF_ROUTE_LAYER, OFF_ROUTE_SOURCE).withProperties(
+                lineWidth(OFF_ROUTE_LINK_WIDTH),
+                lineDasharray(OFF_ROUTE_DASHES),
+                lineCap(Property.LINE_CAP_ROUND),
+                lineColor(labelColor),
                 visibility(Property.NONE),
             ),
         )
         style.addLayer(
-            CircleLayer(SNAPPED_INNER_LAYER, SNAPPED_SOURCE).withProperties(
-                circleRadius(SNAPPED_INNER_RADIUS),
-                circleColor(labelColor),
+            CircleLayer(SNAPPED_LAYER, SNAPPED_SOURCE).withProperties(
+                circleRadius(LAST_STOP_RADIUS),
+                circleColor(STOP_FILL),
+                circleStrokeColor(MARKER_INK),
+                circleStrokeWidth(MARKED_STOP_RING_WIDTH),
                 visibility(Property.NONE),
             ),
         )
@@ -706,7 +716,7 @@ private class RouteMapController(
         // The line is only ever drawn two ways, so it is restyled only when it crosses between
         // them, or on the first fix, which decides which.
         if (previous?.isOnRoute != next.isOnRoute) paintOnRoute(style, next.isOnRoute)
-        next.snapped?.let { drawSnapped(style, it) }
+        drawSnapped(style, next)
         if (previous?.nextStopIndex != next.nextStopIndex) drawStops(style, geometry, next.nextStopIndex)
 
         if (previous == null) {
@@ -726,30 +736,29 @@ private class RouteMapController(
         paintRoute(style, geometry)
         drawStops(style, geometry, current?.nextStopIndex ?: -1)
         paintOnRoute(style, current?.isOnRoute ?: true)
-        current?.snapped?.let { drawSnapped(style, it) }
+        current?.let { drawSnapped(style, it) }
     }
 
     /** The shape in the route colour over its casing. */
     private fun paintRoute(style: Style, geometry: TripGeometry) {
         val routeColor = routeLineColor(geometry.routeColor, dark)
         style.getSourceAs<GeoJsonSource>(ROUTE_SOURCE)?.setGeoJson(routeLineString(geometry.shapePoints))
-        style.getLayer(CASING_LAYER)?.setProperties(lineColor(casingColor(routeColor, dark)), lineOpacity(1f))
-        style.getLayer(ROUTE_LAYER)?.setProperties(lineColor(routeColor), lineOpacity(1f))
+        style.getLayer(CASING_LAYER)?.setProperties(lineColor(casingColor(routeColor, dark)))
+        style.getLayer(ROUTE_LAYER)?.setProperties(lineColor(routeColor))
     }
 
     /**
-     * Off the route the line fades and the matched position shows, as on iOS. The vehicle's ring
-     * turns grey with the status, through [ringVehicle].
+     * Off the route the matched position shows, with a dotted line to it from the vehicle. The
+     * route keeps its full colour: that is when the driver needs to find it again. The vehicle's
+     * ring turns grey with the status, through [ringVehicle].
      */
-    private fun paintOnRoute(style: Style, onRoute: Boolean) {
-        val opacity = if (onRoute) 1f else OFF_ROUTE_OPACITY
-        style.getLayer(CASING_LAYER)?.setProperties(lineOpacity(opacity))
-        style.getLayer(ROUTE_LAYER)?.setProperties(lineOpacity(opacity))
-        setSnappedVisible(style, visible = !onRoute)
-    }
+    private fun paintOnRoute(style: Style, onRoute: Boolean) = setSnappedVisible(style, visible = !onRoute)
 
-    private fun drawSnapped(style: Style, snapped: GeoPoint) {
+    /** Where an off-route vehicle was matched on the route, and the dotted line to it. Nothing on the route. */
+    private fun drawSnapped(style: Style, state: RouteMapState) {
+        val snapped = state.snapped ?: return
         style.getSourceAs<GeoJsonSource>(SNAPPED_SOURCE)?.setGeoJson(Point.fromLngLat(snapped.lon, snapped.lat))
+        style.getSourceAs<GeoJsonSource>(OFF_ROUTE_SOURCE)?.setGeoJson(offRouteLink(state))
     }
 
     private fun drawStops(style: Style, geometry: TripGeometry, nextStopIndex: Int) {
@@ -766,8 +775,8 @@ private class RouteMapController(
 
     private fun setSnappedVisible(style: Style, visible: Boolean) {
         val value = visibility(if (visible) Property.VISIBLE else Property.NONE)
-        style.getLayer(SNAPPED_OUTER_LAYER)?.setProperties(value)
-        style.getLayer(SNAPPED_INNER_LAYER)?.setProperties(value)
+        style.getLayer(OFF_ROUTE_LAYER)?.setProperties(value)
+        style.getLayer(SNAPPED_LAYER)?.setProperties(value)
     }
 
     /**

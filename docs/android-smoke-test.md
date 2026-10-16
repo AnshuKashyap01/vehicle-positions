@@ -411,9 +411,10 @@ going.
   ahead above it, and moves with it between fixes without jumping. The next
   stop is drawn larger, orange in an ink ring, with its name beside it, and
   that moves on to ST3 once ST2 is passed.
-- **The detour:** the route fades, the ring turns grey, and a dot marks
-  where on the route the vehicle was matched. All three are undone once the
-  fixes are back on the line.
+- **The detour:** the ring turns grey, and a dotted line joins the vehicle to
+  where it was matched on the route, marked white in an ink ring like the last
+  stop. The route keeps its full colour. All of it is undone once the fixes
+  are back on the line.
 - **Dragging:** the map stops following and a **Re-center** chip appears at
   the bottom left, above the trip bar. Tapping it, or leaving the map alone
   for 10 seconds, takes it back to the vehicle.
