@@ -27,7 +27,7 @@ class HighlightedRunTest {
         OffsetDateTime.parse("2026-09-22T00:00:00Z").plusHours(hour.toLong()).plusMinutes(minute.toLong()).toInstant()
 
     private fun run(id: String, start: Instant, end: Instant) =
-        TripRun(id = id, headsign = "North", firstStop = "A", lastStop = "B", startsAt = start, endsAt = end)
+        TripRun(id = id, headsign = "North", directionId = 0, firstStop = "A", lastStop = "B", startsAt = start, endsAt = end)
 
     private fun trip(id: String, startsAt: String, endsAt: String) = TripSummaryDto(
         id = id,
