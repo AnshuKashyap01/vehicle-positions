@@ -40,6 +40,7 @@ import org.onebusaway.vehicletracker.ui.runs.TripError
 import org.onebusaway.vehicletracker.ui.resume.ResumeShiftViewModel
 import org.onebusaway.vehicletracker.ui.tracking.TrackingViewModel
 import org.onebusaway.vehicletracker.ui.tracking.TripEnder
+import org.onebusaway.vehicletracker.ui.vehicles.BusSection
 import org.onebusaway.vehicletracker.ui.vehicles.VehicleViewModel
 import org.onebusaway.vehicletracker.ui.vehicles.VehiclesUiState
 import java.io.File
@@ -226,11 +227,20 @@ class ViewModelsTest {
         return state as VehiclesUiState.Loaded
     }
 
-    /** Applies pending ViewModel work, then reads the ids currently on screen, in order. */
+    /** Applies pending ViewModel work, then reads the ids currently on screen, in order, across their sections. */
     private fun visibleIds(vm: VehicleViewModel): List<String> {
         dispatcher.scheduler.advanceUntilIdle()
-        return loadedState(vm).visible.map { it.id }
+        return loadedState(vm).groups.flatMap { group -> group.tiles.map { it.id } }
     }
+
+    /** Applies pending ViewModel work, then reads each section and the ids under it. */
+    private fun sections(vm: VehicleViewModel): List<Pair<BusSection, List<String>>> {
+        dispatcher.scheduler.advanceUntilIdle()
+        return loadedState(vm).groups.map { group -> group.section to group.tiles.map { it.id } }
+    }
+
+    private fun starred(vm: VehicleViewModel): Set<String> =
+        loadedState(vm).groups.flatMap { it.tiles }.filter { it.favorite }.map { it.id }.toSet()
 
     @Test fun `search filters by id and label`() = runTest(dispatcher) {
         withVehicleViewModel { vm, _ ->
@@ -298,12 +308,12 @@ class ViewModelsTest {
             vm.onToggleFavorite("bus-3")
             dispatcher.scheduler.advanceUntilIdle()
             assertEquals(setOf("bus-3"), prefs.favoritesState.value)
-            assertEquals(setOf("bus-3"), loadedState(vm).favorites)
+            assertEquals(setOf("bus-3"), starred(vm))
             assertEquals("bus-3", visibleIds(vm).first())
 
             vm.onToggleFavorite("bus-3")
             dispatcher.scheduler.advanceUntilIdle()
-            assertEquals(emptySet<String>(), loadedState(vm).favorites)
+            assertEquals(emptySet<String>(), starred(vm))
             assertEquals(listOf("van-2", "bus-1", "bus-3"), visibleIds(vm))
         }
     }
@@ -324,6 +334,46 @@ class ViewModelsTest {
         prefs.recordUse("van-2")
         withVehicleViewModel(prefs = prefs) { vm, _ ->
             assertEquals(listOf("bus-3", "van-2", "bus-1"), visibleIds(vm))
+        }
+    }
+
+    @Test fun `buses sit under favorites, then recent, then all buses, each in one section`() = runTest(dispatcher) {
+        val prefs = FakeVehiclePrefsStore().apply { favoritesState.value = setOf("bus-3") }
+        // bus-3 is both a favorite and the latest used: it is listed once, as a favorite.
+        prefs.recordUse("van-2")
+        prefs.recordUse("bus-3")
+        withVehicleViewModel(prefs = prefs) { vm, _ ->
+            assertEquals(
+                listOf(
+                    BusSection.FAVORITES to listOf("bus-3"),
+                    BusSection.RECENT to listOf("van-2"),
+                    BusSection.ALL to listOf("bus-1"),
+                ),
+                sections(vm),
+            )
+        }
+    }
+
+    @Test fun `a section with no buses is left out`() = runTest(dispatcher) {
+        withVehicleViewModel { vm, _ ->
+            assertEquals(listOf(BusSection.ALL to listOf("van-2", "bus-1", "bus-3")), sections(vm))
+        }
+    }
+
+    @Test fun `while searching, every match is under Matches in the usual order`() = runTest(dispatcher) {
+        val prefs = FakeVehiclePrefsStore().apply { favoritesState.value = setOf("bus-3") }
+        withVehicleViewModel(prefs = prefs) { vm, _ ->
+            vm.onQueryChange("bus")
+            assertEquals(listOf(BusSection.MATCHES to listOf("bus-3", "bus-1")), sections(vm))
+        }
+    }
+
+    @Test fun `a tile shows the label under the fleet number only when it adds something`() = runTest(dispatcher) {
+        val body = """[{"id":"4317","label":"Bus 4317"},{"id":"4318","label":"4318"},{"id":"4319","label":" "}]"""
+        withVehicleViewModel(body = body) { vm, _ ->
+            dispatcher.scheduler.advanceUntilIdle()
+            val labels = loadedState(vm).groups.flatMap { it.tiles }.associate { it.id to it.label }
+            assertEquals(mapOf("4317" to "Bus 4317", "4318" to null, "4319" to null), labels)
         }
     }
 

@@ -19,13 +19,27 @@
     <!-- The route's chip, read out, e.g. "Route 7". -->
     <string name="setup_route">Route %1$s</string>
 
+    <!-- In a setup screen's search field, once something is typed. -->
+    <string name="setup_clear_search">Clear search</string>
+
     <!-- Vehicle selection screen -->
-    <string name="vehicles_title">Select a Vehicle</string>
-    <string name="vehicles_empty">No vehicles are assigned to you.</string>
-    <string name="vehicles_error_message">Could not load your vehicles.</string>
-    <string name="vehicles_retry_button">Retry</string>
-    <string name="vehicles_search_label">Search vehicles</string>
-    <string name="vehicles_search_no_matches">No vehicles match your search.</string>
+    <string name="vehicles_title">Choose your bus</string>
+    <string name="vehicles_empty">No buses are assigned to you</string>
+    <string name="vehicles_empty_detail">Ask your dispatcher to assign one, then check again.</string>
+    <string name="vehicles_check_again">Check again</string>
+    <string name="vehicles_error_message">Couldn\'t load your buses</string>
+    <string name="vehicles_error_detail">Check your connection and try again.</string>
+    <string name="vehicles_retry_button">Try again</string>
+    <string name="vehicles_search_label">Bus number</string>
+    <!-- What the driver typed, e.g. "No bus matches 999". -->
+    <string name="vehicles_search_no_matches">No bus matches %1$s</string>
+    <string name="vehicles_search_no_matches_detail">Check the fleet number on the bus.</string>
+    <string name="vehicles_section_favorites">Favorites</string>
+    <string name="vehicles_section_recent">Recent</string>
+    <string name="vehicles_section_all">All buses</string>
+    <string name="vehicles_section_matches">Matches</string>
+    <!-- How TalkBack describes a starred bus's tile, e.g. "4317, Bus 4317, Favorite". -->
+    <string name="vehicles_tile_favorite">Favorite</string>
     <string name="vehicles_favorite_description">Add %1$s to favorites</string>
     <string name="vehicles_unfavorite_description">Remove %1$s from favorites</string>
 

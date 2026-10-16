@@ -286,9 +286,11 @@ takes about ten minutes. Before you start, make sure the driver has an account
      the account is deactivated.
    - **Could not reach the server. Check your connection.** means the phone
      cannot reach the server — check the network and the server URL.
-4. Next is **Select a Vehicle**, listing exactly the vehicles you assigned. If
-   there is only one, the app skips this screen and selects it automatically. If
-   it says **No vehicles are assigned to you.**, go back to section 6.
+4. Next is **Choose your bus**, showing exactly the vehicles you assigned as
+   tiles, with the buses the driver starred under **Favorites** and the ones
+   they drove last under **Recent**. If there is only one, the app skips this
+   screen and selects it automatically. If it says **No buses are assigned to
+   you**, go back to section 6, then have the driver tap **Check again**.
 5. Next the driver picks the route, then the run, from your agency's GTFS
    schedule. There is nothing to type:
    - **Select a Route** lists the routes in the schedule, each with its number
@@ -544,7 +546,7 @@ points are.
 |---|---|---|
 | Driver sees **You are not assigned to this vehicle.** after tapping a run on **Select a Run** | The vehicle is not assigned to that driver, or the assignment was removed. | **Users** → **Edit** the driver → **Assigned vehicles** → pick the vehicle → **Assign**. Then have them tap the run again. |
 | Driver sees **You already have an active trip.** | An earlier trip was never ended, usually because it was started on another phone or the app was reinstalled. | Have the driver open the app on the phone that started the trip; it returns to the tracking screen for the old trip, where **End trip** ends it. Confirm on **Trips** → **Active** that it is gone. If the app no longer knows about the trip, ask your IT contact: there is no button in the admin UI to end another person's trip. |
-| Driver sees **No vehicles are assigned to you.** | No active vehicle is assigned to that account. | Check the vehicle is not deactivated (**Vehicles** → **Show deactivated**), then assign it (section 6). |
+| Driver sees **No buses are assigned to you** | No active vehicle is assigned to that account. | Check the vehicle is not deactivated (**Vehicles** → **Show deactivated**), then assign it (section 6) and have the driver tap **Check again**. |
 | One vehicle missing from the feed and the map, others fine | That phone has stopped reporting for longer than the staleness threshold: no signal, app closed, trip never started, phone battery dead, or Android killed the app in the background. | Ask the driver what the line under the status card says. **No connection** is a coverage problem and clears itself. If the app is not on the tracking screen at all, the trip was never started or was ended. If it keeps dying when the screen locks, the background-location permission is not **"Allow all the time"**: redo step 6 of section 7. |
 | Feed completely empty during service hours | Nothing is reporting, or the server lost its database. | Check **Dashboard**: if **Feed last updated** says **never** (nothing has reported for several minutes) and **Active Trips** is 0, it is the phones — start with two or three drivers. If **Active Trips** is healthy but nothing is in the feed, contact IT: see the monitoring checks in [`deployment.md` §9](deployment.md#9-monitoring). |
 | Driver phone shows **Signed out** | The 24-hour sign-in expired. | Have the driver tap **Sign in** on that card and sign in again. If you have since deactivated the account, sign-in is refused, which is the intended outcome. |

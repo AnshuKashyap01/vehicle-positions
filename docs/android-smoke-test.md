@@ -608,12 +608,12 @@ immediate: no migration runs and nothing listens on `$PORT`.
 2. Force-stop and relaunch the app.
 
 **Expected outcome:** to the app, a server that refused to start is simply a
-server that is down. **Select a Vehicle** reads "Could not load your vehicles."
-with a **Retry** button. The route picker's "This server has no schedule
+server that is down. **Choose your bus** reads "Couldn't load your buses" with a
+**Try again** button. The route picker's "This server has no schedule
 loaded" message does not appear: only a server that is running without a
 catalog (a build from before the schedule was required) can produce it.
 
-3. Put the fixture back and start the server again, then tap **Retry**:
+3. Put the fixture back and start the server again, then tap **Try again**:
 
    ```bash
    export GTFS_STATIC_URL=rider/testdata/fixture.zip

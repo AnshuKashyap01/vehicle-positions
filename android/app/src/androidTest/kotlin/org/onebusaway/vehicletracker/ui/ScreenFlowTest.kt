@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -25,11 +27,13 @@ import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -51,12 +55,14 @@ import org.onebusaway.vehicletracker.R
 import org.onebusaway.vehicletracker.data.ActiveTrip
 import org.onebusaway.vehicletracker.data.TrackingProblem
 import org.onebusaway.vehicletracker.data.TrackingState
+import org.onebusaway.vehicletracker.data.api.VehicleDto
 import org.onebusaway.vehicletracker.engine.AdherenceEvaluator
 import org.onebusaway.vehicletracker.engine.AdherenceThresholds
 import org.onebusaway.vehicletracker.engine.GeoPoint
 import org.onebusaway.vehicletracker.engine.TripGeometry
 import org.onebusaway.vehicletracker.engine.TripStop
 import org.onebusaway.vehicletracker.service.LocationFix
+import org.onebusaway.vehicletracker.ui.components.SPINNER_DELAY_MS
 import org.onebusaway.vehicletracker.ui.login.LoginScreenContent
 import org.onebusaway.vehicletracker.ui.login.LoginUiState
 import org.onebusaway.vehicletracker.ui.resume.ResumeShiftScreenContent
@@ -66,6 +72,11 @@ import org.onebusaway.vehicletracker.ui.tracking.TrackingScreenContent
 import org.onebusaway.vehicletracker.ui.tracking.TrackingUiState
 import org.onebusaway.vehicletracker.ui.tracking.TripPanel
 import org.onebusaway.vehicletracker.ui.tracking.statusCardModel
+import org.onebusaway.vehicletracker.ui.vehicles.BusGroup
+import org.onebusaway.vehicletracker.ui.vehicles.BusSection
+import org.onebusaway.vehicletracker.ui.vehicles.BusTile
+import org.onebusaway.vehicletracker.ui.vehicles.VehicleScreenContent
+import org.onebusaway.vehicletracker.ui.vehicles.VehiclesUiState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -664,5 +675,119 @@ class ScreenFlowTest {
         compose.onNodeWithText(getString(R.string.tracking_adherence_waiting_for_gps)).assertDoesNotExist()
         compose.onNodeWithText(getString(R.string.tracking_reauth_button)).performClick()
         assertTrue(signInClicked)
+    }
+
+    // --- The bus step ---
+
+    private fun getString(resId: Int, vararg args: Any): String =
+        InstrumentationRegistry.getInstrumentation().targetContext.getString(resId, *args)
+
+    private val heading = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
+
+    private val buses = listOf(VehicleDto("4317", "Bus 4317"), VehicleDto("4322", "Bus 4322"), VehicleDto("4318", "4318"))
+    private val busGroups = listOf(
+        BusGroup(BusSection.FAVORITES, listOf(BusTile("4317", "Bus 4317", favorite = true))),
+        BusGroup(BusSection.RECENT, listOf(BusTile("4322", "Bus 4322", favorite = false))),
+        BusGroup(BusSection.ALL, listOf(BusTile("4318", null, favorite = false))),
+    )
+
+    private fun showBuses(
+        state: VehiclesUiState,
+        onVehicleClick: (String) -> Unit = {},
+        onToggleFavorite: (String) -> Unit = {},
+        onRetry: () -> Unit = {},
+    ) {
+        compose.setContent { VehicleScreenContent(state, onVehicleClick, onQueryChange = {}, onToggleFavorite, onRetry) }
+    }
+
+    private fun top(node: SemanticsNodeInteraction) = node.getBoundsInRoot().top
+
+    @Test
+    fun busScreen_listsTilesUnderTheirSectionsAndOpensTheOneTapped() {
+        var opened: String? = null
+        showBuses(VehiclesUiState.Loaded(buses, "", busGroups), onVehicleClick = { opened = it })
+
+        compose.onNode(hasText(getString(R.string.vehicles_title)) and heading).assertIsDisplayed()
+        val order = listOf(
+            compose.onNode(hasText(getString(R.string.vehicles_section_favorites)) and heading),
+            compose.onNode(hasText("4317") and hasClickAction()),
+            compose.onNode(hasText(getString(R.string.vehicles_section_recent)) and heading),
+            compose.onNode(hasText("4322") and hasClickAction()),
+            compose.onNode(hasText(getString(R.string.vehicles_section_all)) and heading),
+            compose.onNode(hasText("4318") and hasClickAction()),
+        ).map { top(it) }
+        assertEquals("each tile sits under its own section", order.sorted(), order)
+
+        // One button, read as "4317, Bus 4317, Favorite".
+        compose.onNode(
+            hasText("4317") and hasText("Bus 4317") and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button) and
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, getString(R.string.vehicles_tile_favorite)),
+        ).performClick()
+        assertEquals("4317", opened)
+    }
+
+    @Test
+    fun busScreen_starSaysWhatItDoesAndTogglesOnlyItsBus() {
+        var opened: String? = null
+        var toggled: String? = null
+        showBuses(VehiclesUiState.Loaded(buses, "", busGroups), onVehicleClick = { opened = it }, onToggleFavorite = { toggled = it })
+
+        compose.onNodeWithContentDescription(getString(R.string.vehicles_unfavorite_description, "4317")).assertIsDisplayed()
+        compose.onNodeWithContentDescription(getString(R.string.vehicles_favorite_description, "4322")).performClick()
+        assertEquals("4322", toggled)
+        assertEquals(null, opened)
+    }
+
+    @Test
+    fun busScreen_saysWhenNoBusMatchesTheSearch() {
+        showBuses(VehiclesUiState.Loaded(buses, "999", emptyList()))
+
+        compose.onNode(hasText(getString(R.string.vehicles_search_no_matches, "999")) and heading).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_search_no_matches_detail)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(getString(R.string.setup_clear_search)).assertIsDisplayed()
+    }
+
+    @Test
+    fun busScreen_checksAgainWhenNoBusIsAssigned() {
+        var reloads = 0
+        showBuses(VehiclesUiState.Loaded(emptyList(), "", emptyList()), onRetry = { reloads++ })
+
+        compose.onNodeWithText(getString(R.string.vehicles_empty)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_empty_detail)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_check_again)).performClick()
+        assertEquals(1, reloads)
+    }
+
+    @Test
+    fun busScreen_triesAgainAfterAFailedLoad() {
+        var reloads = 0
+        showBuses(VehiclesUiState.Error(retry = true), onRetry = { reloads++ })
+
+        compose.onNodeWithText(getString(R.string.vehicles_error_message)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_error_detail)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_retry_button)).performClick()
+        assertEquals(1, reloads)
+    }
+
+    @Test
+    fun busScreen_offersNothingToTryWhenSignedOut() {
+        showBuses(VehiclesUiState.Error(retry = false))
+
+        compose.onNodeWithText(getString(R.string.vehicles_error_message)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_error_detail)).assertDoesNotExist()
+        compose.onNodeWithText(getString(R.string.vehicles_retry_button)).assertDoesNotExist()
+    }
+
+    @Test
+    fun busScreen_showsTheSpinnerOnlyOnceTheLoadIsSlow() {
+        val spinner = SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo.Indeterminate)
+        compose.mainClock.autoAdvance = false
+        showBuses(VehiclesUiState.Loading)
+
+        compose.mainClock.advanceTimeBy(SPINNER_DELAY_MS / 2)
+        compose.onNode(spinner).assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(SPINNER_DELAY_MS)
+        compose.onNode(spinner).assertExists()
     }
 }
