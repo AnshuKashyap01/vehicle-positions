@@ -401,9 +401,10 @@ going.
 
 **Expected outcome:**
 
-- **Before the first fix:** the whole route, in the route's colour over a darker
-  edge, with its stops as small white circles in grey rings and the last one,
-  ST3, in an ink ring.
+- **Before the first fix:** the whole route, in the route's colour over an edge
+  that sets it off: white under a dark colour like the fixture's blue, ink under
+  a bright one. Its stops are small white circles in grey rings, and the last
+  one, ST3, is in an ink ring.
 - **From the first fix:** the map closes in on the vehicle, an arrow on a dark
   disc ringed in the status card's colour. It sits a third of the way up the
   part of the map between the status card and the trip bar, with the route

@@ -2,6 +2,7 @@ package org.onebusaway.vehicletracker.ui.tracking
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -302,8 +303,11 @@ private fun FactRow(icon: Int, label: String, value: String, problem: Boolean = 
  */
 @Composable
 private fun StopList(geometry: TripGeometry, rows: List<StopRow>, vehicleId: String, model: StatusCardModel, modifier: Modifier) {
-    val line = Color(routeLineColor(geometry.routeColor))
-    val casing = Color(casingColor(routeLineColor(geometry.routeColor)))
+    // As the map draws it, in the same theme.
+    val dark = isSystemInDarkTheme()
+    val routeColor = routeLineColor(geometry.routeColor, dark)
+    val line = Color(routeColor)
+    val casing = Color(casingColor(routeColor, dark))
     LazyColumn(modifier = modifier, contentPadding = PaddingValues(horizontal = SidePadding)) {
         itemsIndexed(rows) { index, row ->
             val strip = RouteStrip(line, casing, last = index == rows.lastIndex)

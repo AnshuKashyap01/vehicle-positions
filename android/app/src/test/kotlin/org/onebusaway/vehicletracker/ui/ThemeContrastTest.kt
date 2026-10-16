@@ -9,6 +9,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.onebusaway.vehicletracker.ui.map.PLAIN_BACKGROUND_DARK
+import org.onebusaway.vehicletracker.ui.map.PLAIN_BACKGROUND_LIGHT
 import org.onebusaway.vehicletracker.ui.theme.DarkColors
 import org.onebusaway.vehicletracker.ui.theme.DarkProblemColors
 import org.onebusaway.vehicletracker.ui.theme.DarkStatusColors
@@ -88,10 +90,15 @@ class ThemeContrastTest {
 
     /**
      * The ring round the vehicle is the status text colour, on the street map's land and its
-     * background, read from the committed styles. A ring is a graphic, so 3:1.
+     * background, read from the committed styles, and on the plain map before the streets arrive.
+     * A ring is a graphic, so 3:1.
      */
-    @Test fun `the vehicle's ring stands out on the street map`() {
+    @Test fun `the vehicle's ring stands out on the map`() {
         for (theme in themes) {
+            val plain = Color(if (theme.name == "dark") PLAIN_BACKGROUND_DARK else PLAIN_BACKGROUND_LIGHT)
+            for (tone in StatusTone.entries) {
+                assertContrast(3f, "${theme.name} $tone ring on the plain map", theme.status[tone].text, plain)
+            }
             val style = Json.parseToJsonElement(File("src/main/assets/map/style-${theme.name}.json").readText()).jsonObject
             val paint = style.getValue("layers").jsonArray.map { it.jsonObject }.associate { layer ->
                 layer.getValue("id").jsonPrimitive.content to layer["paint"]?.jsonObject

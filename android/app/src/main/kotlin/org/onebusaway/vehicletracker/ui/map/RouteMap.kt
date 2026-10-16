@@ -150,7 +150,7 @@ private const val RETURN_TO_FOLLOWING_MS = 10_000L
 fun Context.glEsVersion(): Int = getSystemService(ActivityManager::class.java).deviceConfigurationInfo.reqGlEsVersion
 
 /**
- * The trip on a map, as spec §6.3 has it: the shape in the route colour over a darker casing,
+ * The trip on a map, as spec §6.3 has it: the shape in the route colour over a casing,
  * the stops with the next one enlarged and named, the vehicle pointed along its course, and the
  * matched position while it is off the route. The camera follows heading-up with the vehicle a
  * third of the way up the part of the map that [contentPadding], the screen's own cards and bars
@@ -729,11 +729,11 @@ private class RouteMapController(
         current?.snapped?.let { drawSnapped(style, it) }
     }
 
-    /** The shape in the route colour over its darker casing. */
+    /** The shape in the route colour over its casing. */
     private fun paintRoute(style: Style, geometry: TripGeometry) {
-        val routeColor = routeLineColor(geometry.routeColor)
+        val routeColor = routeLineColor(geometry.routeColor, dark)
         style.getSourceAs<GeoJsonSource>(ROUTE_SOURCE)?.setGeoJson(routeLineString(geometry.shapePoints))
-        style.getLayer(CASING_LAYER)?.setProperties(lineColor(casingColor(routeColor)), lineOpacity(1f))
+        style.getLayer(CASING_LAYER)?.setProperties(lineColor(casingColor(routeColor, dark)), lineOpacity(1f))
         style.getLayer(ROUTE_LAYER)?.setProperties(lineColor(routeColor), lineOpacity(1f))
     }
 
@@ -805,12 +805,8 @@ private class RouteMapController(
 
 private const val LOCATION_PROVIDER = "tracker"
 
-// iOS's systemGray6, light and dark.
-private const val BACKGROUND_LIGHT = "#F2F2F7"
-private const val BACKGROUND_DARK = "#1C1C1E"
-
 /** A style with nothing in it but a background, for the route to be drawn on. */
 private fun plainStyle(dark: Boolean): String {
-    val background = if (dark) BACKGROUND_DARK else BACKGROUND_LIGHT
+    val background = "#%06X".format(0xFFFFFF and if (dark) PLAIN_BACKGROUND_DARK else PLAIN_BACKGROUND_LIGHT)
     return """{"version":8,"sources":{},"layers":[{"id":"background","type":"background","paint":{"background-color":"$background"}}]}"""
 }
