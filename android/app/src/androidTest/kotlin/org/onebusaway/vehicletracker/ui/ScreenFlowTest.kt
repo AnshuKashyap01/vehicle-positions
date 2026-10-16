@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
@@ -26,6 +27,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -40,11 +42,16 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
@@ -1103,5 +1110,30 @@ class ScreenFlowTest {
         compose.onNodeWithText(getString(R.string.setup_step_route)).assertIsDisplayed()
         compose.onNodeWithContentDescription(getString(R.string.setup_navigate_up)).assertDoesNotExist()
         compose.onNode(hasText("4317")).assertIsDisplayed().assert(hasClickAction().not())
+    }
+
+    // --- Moving between the steps ---
+
+    @Test
+    fun busScreen_aDoubleTapOpensTheRouteStepOnce() {
+        lateinit var navController: NavHostController
+        compose.setContent {
+            navController = rememberNavController()
+            NavHost(navController, startDestination = "vehicles") {
+                composable("vehicles") { entry ->
+                    // Wired as AppNav wires the bus step.
+                    val open = remember(entry) { entry.ifResumed<String> { id -> navController.navigate("trip/$id") } }
+                    VehicleScreenContent(VehiclesUiState.Loaded(buses, "", busGroups), open, {}, {}, {})
+                }
+                composable("trip/{vehicleId}") {}
+            }
+        }
+
+        // The second tap lands while the bus step is still fading out under the route step.
+        compose.onNode(hasText("4317") and hasClickAction()).performTouchInput { doubleClick() }
+        compose.waitForIdle()
+
+        assertEquals("trip/{vehicleId}", navController.currentDestination?.route)
+        assertEquals("one route step, with the bus step right behind it", "vehicles", navController.previousBackStackEntry?.destination?.route)
     }
 }

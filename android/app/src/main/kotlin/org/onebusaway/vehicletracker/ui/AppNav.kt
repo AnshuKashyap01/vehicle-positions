@@ -1,20 +1,28 @@
 package org.onebusaway.vehicletracker.ui
 
 import android.net.Uri
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.dropUnlessResumed
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
 import androidx.navigation.NavOptionsBuilder
 import androidx.navigation.NavType
+import androidx.navigation.compose.DefaultNavTransitions
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -33,9 +41,15 @@ import org.onebusaway.vehicletracker.di.EpochSecondsClock
 import org.onebusaway.vehicletracker.di.ServiceAnnounceGrace
 import org.onebusaway.vehicletracker.ui.login.LoginScreen
 import org.onebusaway.vehicletracker.ui.resume.ResumeShiftScreen
+import org.onebusaway.vehicletracker.ui.routes.RouteItem
 import org.onebusaway.vehicletracker.ui.routes.RoutesScreen
 import org.onebusaway.vehicletracker.ui.routes.routeColorHex
 import org.onebusaway.vehicletracker.ui.runs.RunsScreen
+import org.onebusaway.vehicletracker.ui.theme.SharedAxisSlide
+import org.onebusaway.vehicletracker.ui.theme.fadeThroughIn
+import org.onebusaway.vehicletracker.ui.theme.fadeThroughOut
+import org.onebusaway.vehicletracker.ui.theme.sharedAxisIn
+import org.onebusaway.vehicletracker.ui.theme.sharedAxisOut
 import org.onebusaway.vehicletracker.ui.tracking.TrackingScreen
 import org.onebusaway.vehicletracker.ui.vehicles.VehicleScreen
 import java.time.Duration
@@ -70,6 +84,23 @@ private fun arg(value: String): String = Uri.encode(value)
 // Reading one back needs no matching decode: NavDeepLink.getMatchingPathArguments already runs
 // every captured path argument through NavUriUtils.decode before it reaches the bundle.
 private fun NavBackStackEntry.pathArg(name: String): String = arguments?.getString(name).orEmpty()
+
+/**
+ * [dropUnlessResumed] for a tap that carries a value, such as the bus tapped, which the library's version cannot
+ * take. The tap does nothing unless this screen is resumed, and it is not while a screen change is under way, so a
+ * double tap cannot open two screens.
+ */
+internal fun <T> NavBackStackEntry.ifResumed(block: (T) -> Unit): (T) -> Unit = { value ->
+    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) block(value)
+}
+
+private val SETUP_STEPS = setOf(ROUTE_VEHICLES, ROUTE_ROUTES, ROUTE_RUNS)
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenSetupSteps(): Boolean =
+    initialState.destination.route in SETUP_STEPS && targetState.destination.route in SETUP_STEPS
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.toOrFromTracking(): Boolean =
+    initialState.destination.route == ROUTE_TRACKING || targetState.destination.route == ROUTE_TRACKING
 
 /** Whether the bus step is behind this screen. It is not once the one-bus skip has taken its place. */
 private fun NavController.hasBusStep(): Boolean =
@@ -144,6 +175,19 @@ private fun ClearOfSystemBars(content: @Composable () -> Unit) {
     Box(Modifier.safeDrawingPadding()) { content() }
 }
 
+/** Going back a setup step, or out of Tracking; null for the screens that keep the default transitions. */
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.popEnter(slidePx: Int): EnterTransition? = when {
+    betweenSetupSteps() -> sharedAxisIn(SlideDirection.End, slidePx)
+    toOrFromTracking() -> fadeThroughIn()
+    else -> null
+}
+
+private fun AnimatedContentTransitionScope<NavBackStackEntry>.popExit(slidePx: Int): ExitTransition? = when {
+    betweenSetupSteps() -> sharedAxisOut(SlideDirection.End, slidePx)
+    toOrFromTracking() -> fadeThroughOut()
+    else -> null
+}
+
 @Composable
 fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltViewModel()) {
     val startDestination by navViewModel.startDestination.collectAsStateWithLifecycle()
@@ -152,7 +196,36 @@ fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltVi
     if (destination == null) return
 
     val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = destination, modifier = modifier) {
+    val slidePx = with(LocalDensity.current) { SharedAxisSlide.roundToPx() }
+    // The steps of choosing a trip slide along one axis; starting the trip and leaving it fade through instead,
+    // because they change the task. The rest keep the defaults. The back gesture previews the same pop it ends in.
+    NavHost(
+        navController = navController,
+        startDestination = destination,
+        modifier = modifier,
+        enterTransition = {
+            when {
+                betweenSetupSteps() -> sharedAxisIn(SlideDirection.Start, slidePx)
+                toOrFromTracking() -> fadeThroughIn()
+                else -> DefaultNavTransitions.enterTransition(this)
+            }
+        },
+        exitTransition = {
+            when {
+                betweenSetupSteps() -> sharedAxisOut(SlideDirection.Start, slidePx)
+                toOrFromTracking() -> fadeThroughOut()
+                else -> DefaultNavTransitions.exitTransition(this)
+            }
+        },
+        popEnterTransition = { popEnter(slidePx) ?: DefaultNavTransitions.enterTransition(this) },
+        popExitTransition = { popExit(slidePx) ?: DefaultNavTransitions.exitTransition(this) },
+        predictivePopEnterTransition = { swipeEdge ->
+            popEnter(slidePx) ?: DefaultNavTransitions.predictivePopEnterTransition(this, swipeEdge)
+        },
+        predictivePopExitTransition = { swipeEdge ->
+            popExit(slidePx) ?: DefaultNavTransitions.predictivePopExitTransition(this, swipeEdge)
+        },
+    ) {
         composable(ROUTE_LOGIN) {
             ClearOfSystemBars {
                 LoginScreen(
@@ -174,10 +247,15 @@ fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltVi
                 )
             }
         }
-        composable(ROUTE_VEHICLES) {
+        composable(ROUTE_VEHICLES) { backStackEntry ->
+            val openRoutes = remember(backStackEntry) {
+                backStackEntry.ifResumed<String> { vehicleId -> navController.navigate("trip/${arg(vehicleId)}") }
+            }
             ClearOfSystemBars {
                 VehicleScreen(
-                    onVehicleSelected = { vehicleId -> navController.navigate("trip/${arg(vehicleId)}") },
+                    onVehicleSelected = openRoutes,
+                    // Not a tap: it fires once the assignments load, which can be while this screen is still sliding
+                    // in, and a guard would drop it.
                     onOnlyVehicle = { vehicleId -> navController.navigate("trip/${arg(vehicleId)}", skipBusStep) },
                 )
             }
@@ -190,20 +268,18 @@ fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltVi
             // A driver whose only bus was chosen for them has no bus step to go back to: no Back, and the bus chip
             // only says which bus it is.
             val hasBusStep = remember(backStackEntry) { navController.hasBusStep() }
-            val backToBuses: (() -> Unit)? = if (hasBusStep) ({ navController.popBackStack() }) else null
+            val backToBuses = if (hasBusStep) dropUnlessResumed { navController.popBackStack() } else null
+            val openRuns = remember(backStackEntry) {
+                backStackEntry.ifResumed<RouteItem> { route ->
+                    val badge = route.badge
+                    navController.navigate(
+                        "trip/${arg(vehicleId)}/routes/${arg(route.id)}?name=${arg(badge.shortName)}" +
+                            "&color=${arg(routeColorHex(badge.color))}&text=${arg(routeColorHex(badge.textColor))}",
+                    )
+                }
+            }
             ClearOfSystemBars {
-                RoutesScreen(
-                    busId = vehicleId,
-                    onBack = backToBuses,
-                    onBusClick = backToBuses,
-                    onRouteSelected = { route ->
-                        val badge = route.badge
-                        navController.navigate(
-                            "trip/${arg(vehicleId)}/routes/${arg(route.id)}?name=${arg(badge.shortName)}" +
-                                "&color=${arg(routeColorHex(badge.color))}&text=${arg(routeColorHex(badge.textColor))}",
-                        )
-                    },
-                )
+                RoutesScreen(busId = vehicleId, onBack = backToBuses, onBusClick = backToBuses, onRouteSelected = openRuns)
             }
         }
         composable(
@@ -220,16 +296,18 @@ fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltVi
             ClearOfSystemBars {
                 // The arguments reach RunsViewModel through its SavedStateHandle.
                 RunsScreen(
+                    // Not a tap: the server confirms the start, perhaps after the driver has locked the phone, and
+                    // a guard would leave the trip started with the run step still on screen.
                     onTripStarted = {
                         navController.navigate(ROUTE_TRACKING) {
                             popUpTo(0) { inclusive = true }
                         }
                     },
-                    onBack = { navController.popBackStack() },
-                    onBusClick = if (hasBusStep) ({ navController.toBusStep() }) else null,
-                    onRouteClick = { navController.popBackStack(ROUTE_ROUTES, inclusive = false) },
-                    onChangeBus = { navController.toBusStep() },
-                    onChooseAnotherRoute = { navController.popBackStack() },
+                    onBack = dropUnlessResumed { navController.popBackStack() },
+                    onBusClick = if (hasBusStep) dropUnlessResumed { navController.toBusStep() } else null,
+                    onRouteClick = dropUnlessResumed { navController.popBackStack(ROUTE_ROUTES, inclusive = false) },
+                    onChangeBus = dropUnlessResumed { navController.toBusStep() },
+                    onChooseAnotherRoute = dropUnlessResumed { navController.popBackStack() },
                 )
             }
         }
