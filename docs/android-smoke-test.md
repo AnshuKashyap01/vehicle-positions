@@ -402,12 +402,14 @@ going.
 **Expected outcome:**
 
 - **Before the first fix:** the whole route, in the route's colour over a darker
-  edge, with its three stops as small ringed circles.
+  edge, with its stops as small white circles in grey rings and the last one,
+  ST3, in an ink ring.
 - **From the first fix:** the map closes in on the vehicle, an arrow on a dark
   disc ringed in the status card's colour. It sits a third of the way up the
   part of the map between the status card and the trip bar, with the route
-  ahead above it, and moves with it between fixes without jumping. The next stop is drawn larger
-  with its name beside it, and that moves on to ST3 once ST2 is passed.
+  ahead above it, and moves with it between fixes without jumping. The next
+  stop is drawn larger, orange in an ink ring, with its name beside it, and
+  that moves on to ST3 once ST2 is passed.
 - **The detour:** the route fades, the ring turns grey, and a dot marks
   where on the route the vehicle was matched. All three are undone once the
   fixes are back on the line.

@@ -7,7 +7,6 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.location.Location
@@ -103,16 +102,23 @@ import org.onebusaway.vehicletracker.engine.TripGeometry
 import java.io.File
 import kotlin.math.roundToInt
 
-// The sizes and the off-route look are iOS's, from RouteMapViewController and MapGlyphs
-// (spec §6.3). MapLibre measures in density-independent pixels, as iOS does in points.
+// The line's widths and the off-route look are iOS's, from RouteMapViewController and MapGlyphs
+// (spec §6.3); the stops are the design's. MapLibre measures in density-independent pixels, as
+// iOS does in points.
 private const val CASING_WIDTH = 10f
 private const val ROUTE_WIDTH = 6f
 private const val OFF_ROUTE_OPACITY = 0.35f
 private const val STOP_RING_WIDTH = 2f
+private const val MARKED_STOP_RING_WIDTH = 3f
 
-/** A stop is 10 across on iOS and the next one 18, ring included; MapLibre adds the ring outside the radius. */
-private const val STOP_RADIUS = 5f - STOP_RING_WIDTH
-private const val NEXT_STOP_RADIUS = 9f - STOP_RING_WIDTH
+/**
+ * Across, ring included: a stop is 12, the last stop 17 and the next 23, in a white halo 25
+ * across. MapLibre adds the ring outside the radius.
+ */
+private const val STOP_RADIUS = 6f - STOP_RING_WIDTH
+private const val LAST_STOP_RADIUS = 8.5f - MARKED_STOP_RING_WIDTH
+private const val NEXT_STOP_RADIUS = 11.5f - MARKED_STOP_RING_WIDTH
+private const val NEXT_STOP_HALO_RADIUS = 12.5f
 private const val SNAPPED_OUTER_RADIUS = 5f
 private const val SNAPPED_INNER_RADIUS = 3f
 private const val FIT_PADDING_DP = 40
@@ -129,6 +135,7 @@ private const val SNAPPED_SOURCE = "snapped"
 private const val CASING_LAYER = "route-casing"
 private const val ROUTE_LAYER = "route-line"
 private const val STOPS_LAYER = "stops"
+private const val NEXT_STOP_HALO_LAYER = "next-stop-halo"
 private const val NEXT_STOP_LABEL_LAYER = "next-stop-label"
 private const val SNAPPED_OUTER_LAYER = "snapped-outer"
 private const val SNAPPED_INNER_LAYER = "snapped-inner"
@@ -545,12 +552,35 @@ private class RouteMapController(
                 lineJoin(Property.LINE_JOIN_ROUND),
             ),
         )
+        // A stop is white in a grey ring. The next stop, the one the driver looks for, is orange in
+        // an ink ring and a white halo; the last stop is white in an ink ring.
         val isNext = Expression.eq(Expression.get(NEXT_STOP_PROPERTY), Expression.literal(true))
+        val isLast = Expression.eq(Expression.get(LAST_STOP_PROPERTY), Expression.literal(true))
+        addRouteLayer(
+            CircleLayer(NEXT_STOP_HALO_LAYER, STOPS_SOURCE)
+                .withProperties(circleRadius(NEXT_STOP_HALO_RADIUS), circleColor(STOP_FILL))
+                .withFilter(isNext),
+        )
         addRouteLayer(
             CircleLayer(STOPS_LAYER, STOPS_SOURCE).withProperties(
-                circleRadius(Expression.switchCase(isNext, Expression.literal(NEXT_STOP_RADIUS), Expression.literal(STOP_RADIUS))),
-                circleStrokeColor(Color.WHITE),
-                circleStrokeWidth(STOP_RING_WIDTH),
+                circleRadius(
+                    Expression.switchCase(
+                        isNext, Expression.literal(NEXT_STOP_RADIUS),
+                        isLast, Expression.literal(LAST_STOP_RADIUS),
+                        Expression.literal(STOP_RADIUS),
+                    ),
+                ),
+                circleColor(Expression.switchCase(isNext, Expression.color(NEXT_STOP_FILL), Expression.color(STOP_FILL))),
+                circleStrokeColor(
+                    Expression.switchCase(Expression.any(isNext, isLast), Expression.color(MARKER_INK), Expression.color(STOP_RING)),
+                ),
+                circleStrokeWidth(
+                    Expression.switchCase(
+                        Expression.any(isNext, isLast),
+                        Expression.literal(MARKED_STOP_RING_WIDTH),
+                        Expression.literal(STOP_RING_WIDTH),
+                    ),
+                ),
             ),
         )
         // The name is an image drawn by Android, not map text: map text needs font files, and
@@ -699,13 +729,12 @@ private class RouteMapController(
         current?.snapped?.let { drawSnapped(style, it) }
     }
 
-    /** The shape in the route colour over its darker casing, and the stops in the same colour. */
+    /** The shape in the route colour over its darker casing. */
     private fun paintRoute(style: Style, geometry: TripGeometry) {
         val routeColor = routeLineColor(geometry.routeColor)
         style.getSourceAs<GeoJsonSource>(ROUTE_SOURCE)?.setGeoJson(routeLineString(geometry.shapePoints))
         style.getLayer(CASING_LAYER)?.setProperties(lineColor(casingColor(routeColor)), lineOpacity(1f))
         style.getLayer(ROUTE_LAYER)?.setProperties(lineColor(routeColor), lineOpacity(1f))
-        style.getLayer(STOPS_LAYER)?.setProperties(circleColor(routeColor))
     }
 
     /**
@@ -753,7 +782,7 @@ private class RouteMapController(
         }
         val text = TextUtils.ellipsize(name, paint, dp(LABEL_MAX_WIDTH_DP).toFloat(), TextUtils.TruncateAt.END).toString()
         val halo = dp(LABEL_HALO_DP).toFloat()
-        val left = dp(NEXT_STOP_RADIUS + STOP_RING_WIDTH + LABEL_GAP_DP).toFloat()
+        val left = dp(NEXT_STOP_HALO_RADIUS + LABEL_GAP_DP).toFloat()
         val metrics = paint.fontMetrics
         val width = (left + paint.measureText(text) + 2 * halo).roundToInt().coerceAtLeast(1)
         val height = (metrics.descent - metrics.ascent + 2 * halo).roundToInt().coerceAtLeast(1)

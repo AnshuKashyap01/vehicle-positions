@@ -13,15 +13,17 @@ const val STOP_RING = 0xFF6B6B6B.toInt()
 const val NEXT_STOP_FILL = 0xFFFFA726.toInt()
 const val MARKER_INK = 0xFF1F1F1F.toInt()
 
-/** The feature property that marks the next stop, which the map draws larger. */
+/** The feature properties that mark the next stop and the end of the line, which the map draws apart. */
 const val NEXT_STOP_PROPERTY = "next"
+const val LAST_STOP_PROPERTY = "last"
 
-/** The trip's stops as map points, in stop order, each saying whether it is the next one. */
+/** The trip's stops as map points, in stop order, each saying whether it is the next one and whether it is the last. */
 fun stopFeatures(stops: List<TripStop>, nextStopIndex: Int): FeatureCollection =
     FeatureCollection.fromFeatures(
         stops.mapIndexed { index, stop ->
             Feature.fromGeometry(Point.fromLngLat(stop.lon, stop.lat)).apply {
                 addBooleanProperty(NEXT_STOP_PROPERTY, index == nextStopIndex)
+                addBooleanProperty(LAST_STOP_PROPERTY, index == stops.lastIndex)
             }
         },
     )
