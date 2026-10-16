@@ -351,12 +351,13 @@ so this normally appears on a phone that has been running since the previous
 day. Tap **Sign in** on the card and sign in again with the same email and
 password; the trip carries on.
 
-**Ending a trip.** Tap **End trip** and confirm **End this trip?** ("This will
-stop location tracking and mark the trip as complete."). Tracking stops, the
+**Ending a trip.** Tap **End trip** on the trip bar and confirm **End this
+trip?**, which names the route and run and says how many reports were sent.
+The button says **Ending…** while the end is on its way. Tracking stops, the
 notification disappears, and the vehicle drops out of the feed once its last
 report ages past the staleness threshold. If the server cannot be reached at
-that moment the app offers **Could not end trip** with **Retry** and **End
-Locally**. **End Locally** stops the phone at once, but the trip stays
+that moment the app offers **Trip not ended yet** with **Try again** and **End
+on this phone**. **End on this phone** stops the phone at once, but the trip stays
 **Active** on your **Trips** page until the driver starts their next trip: the
 app sends the end just before that start, so the trip's end time shows when the
 next one began, not when the run finished.

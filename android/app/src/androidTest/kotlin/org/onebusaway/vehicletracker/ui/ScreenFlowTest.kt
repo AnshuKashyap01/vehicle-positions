@@ -24,7 +24,9 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.getBoundsInRoot
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -40,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -103,26 +106,6 @@ class ScreenFlowTest {
             compose.onNodeWithText(getString(title)).assertDoesNotExist()
         }
         compose.onNodeWithText(getString(R.string.tracking_signed_out_title)).assertDoesNotExist()
-    }
-
-    @Test
-    fun trackingScreen_endTripShowsConfirmation() {
-        compose.setContent {
-            TrackingScreenContent(
-                state = TrackingUiState(
-                    tracking = TrackingState(active = true, problem = TrackingProblem.NONE),
-                ),
-                onEndTripClick = {},
-                onEndTripLocallyClick = {},
-                onDismissError = {},
-                onReauthClick = {},
-            )
-        }
-
-        compose.onNodeWithText(getString(R.string.tracking_end_trip_button)).performClick()
-
-        compose.onNodeWithText(getString(R.string.tracking_end_trip_dialog_title)).assertIsDisplayed()
-        compose.onNodeWithText(getString(R.string.tracking_end_trip_dialog_message)).assertIsDisplayed()
     }
 
     @Test
@@ -428,6 +411,90 @@ class ScreenFlowTest {
         showTripBar(393.dp, route7.copy(routeShortName = "E Line"))
 
         assertSentCountWhole()
+    }
+
+    // --- Ending the trip ---
+
+    private fun showEnding(state: TrackingUiState, onEnd: () -> Unit = {}, onEndLocally: () -> Unit = {}) {
+        compose.setContent {
+            TrackingScreenContent(
+                state = state,
+                onEndTripClick = onEnd,
+                onEndTripLocallyClick = onEndLocally,
+                onDismissError = {},
+                onReauthClick = {},
+            )
+        }
+    }
+
+    private fun inDialog(text: String) = compose.onNode(hasText(text) and hasAnyAncestor(isDialog()))
+
+    @Test
+    fun endTrip_asksFirstAndKeepGoingKeepsTheTrip() {
+        var ended = false
+        showEnding(TrackingUiState(tracking = onTheRoad, activeTrip = trip4317), onEnd = { ended = true })
+
+        compose.onNodeWithText(getString(R.string.tracking_end_trip_button)).performClick()
+
+        compose.onNodeWithText(getString(R.string.tracking_end_trip_dialog_title)).assertIsDisplayed()
+        // "Reports stop, and route 7's 8:00 AM run is marked complete. 142 reports were sent.",
+        // with the time in the device's style.
+        val message = resources.getQuantityString(R.plurals.tracking_end_trip_dialog_message, 142, "7", "8:00", 142)
+        compose.onNodeWithText(message.substringBefore("8:00"), substring = true).assertIsDisplayed()
+        compose.onNodeWithText(message.substringAfter("8:00"), substring = true).assertIsDisplayed()
+
+        inDialog(getString(R.string.tracking_end_trip_dialog_cancel)).performClick()
+
+        compose.onNodeWithText(getString(R.string.tracking_end_trip_dialog_title)).assertDoesNotExist()
+        assertFalse(ended)
+    }
+
+    @Test
+    fun endTrip_endsTheTripOnceConfirmed() {
+        var ended = false
+        showEnding(TrackingUiState(tracking = onTheRoad, activeTrip = trip4317), onEnd = { ended = true })
+
+        compose.onNodeWithText(getString(R.string.tracking_end_trip_button)).performClick()
+        inDialog(getString(R.string.tracking_end_trip_dialog_confirm)).performClick()
+
+        assertTrue(ended)
+        compose.onNodeWithText(getString(R.string.tracking_end_trip_dialog_title)).assertDoesNotExist()
+    }
+
+    @Test
+    fun endTrip_saysThisRunWhenThePhoneHasNoRouteForIt() {
+        showEnding(TrackingUiState(tracking = TrackingState(active = true, fixesSent = 1, geometry = null)))
+
+        compose.onNodeWithText(getString(R.string.tracking_end_trip_button)).performClick()
+
+        compose.onNodeWithText(resources.getQuantityString(R.plurals.tracking_end_trip_dialog_message_no_run, 1, 1)).assertIsDisplayed()
+    }
+
+    @Test
+    fun endTrip_saysThisRunForARouteTheFeedGaveNoName() {
+        showEnding(TrackingUiState(tracking = onTheRoad.copy(geometry = route7.copy(routeShortName = ""))))
+
+        compose.onNodeWithText(getString(R.string.tracking_end_trip_button)).performClick()
+
+        compose.onNodeWithText(resources.getQuantityString(R.plurals.tracking_end_trip_dialog_message_no_run, 142, 142)).assertIsDisplayed()
+    }
+
+    @Test
+    fun endTrip_thatFailedOffersToTryAgainOrEndOnThisPhone() {
+        var retried = false
+        var endedHere = false
+        showEnding(
+            TrackingUiState(tracking = onTheRoad, activeTrip = trip4317, endTripError = true),
+            onEnd = { retried = true },
+            onEndLocally = { endedHere = true },
+        )
+
+        compose.onNodeWithText(getString(R.string.tracking_end_trip_error_title)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.tracking_end_trip_error_message)).assertIsDisplayed()
+        inDialog(getString(R.string.tracking_end_trip_error_retry)).performClick()
+        assertTrue(retried)
+        inDialog(getString(R.string.tracking_end_trip_error_end_locally)).performClick()
+        assertTrue(endedHere)
     }
 
     @Test

@@ -20,7 +20,10 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.BottomSheetScaffold
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
@@ -42,6 +45,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
@@ -51,9 +56,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.onebusaway.vehicletracker.R
+import org.onebusaway.vehicletracker.data.TrackingState
 import org.onebusaway.vehicletracker.ui.map.RouteMap
 import org.onebusaway.vehicletracker.ui.map.glEsVersion
 import org.onebusaway.vehicletracker.ui.map.supportsMap
+import org.onebusaway.vehicletracker.ui.theme.AppTheme
 
 /** The gap between the screen's edges and the status card floating over the map. */
 private val CardMargin = 12.dp
@@ -191,20 +198,18 @@ fun TrackingScreenContent(
     if (showConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showConfirmDialog = false },
+            icon = { Icon(painterResource(R.drawable.ic_stop_circle), contentDescription = null) },
+            iconContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
             title = { Text(stringResource(R.string.tracking_end_trip_dialog_title)) },
-            text = { Text(stringResource(R.string.tracking_end_trip_dialog_message)) },
+            text = { Text(endTripMessage(state.tracking)) },
             confirmButton = {
-                TextButton(onClick = {
+                InkButton(stringResource(R.string.tracking_end_trip_dialog_confirm)) {
                     showConfirmDialog = false
                     onEndTripClick()
-                }) {
-                    Text(stringResource(R.string.tracking_end_trip_dialog_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showConfirmDialog = false }) {
-                    Text(stringResource(R.string.tracking_end_trip_dialog_cancel))
-                }
+                QuietButton(stringResource(R.string.tracking_end_trip_dialog_cancel)) { showConfirmDialog = false }
             },
         )
     }
@@ -232,22 +237,52 @@ internal fun TripDuration(startedAtEpochSec: Long?, style: TextStyle, color: Col
     Text(text = formatDuration(elapsedSeconds), style = style, color = color)
 }
 
+/** What ending the trip will do, with the run's name when the phone has it, and how many reports went out. */
+@Composable
+private fun endTripMessage(tracking: TrackingState): String {
+    val geometry = tracking.geometry
+    val firstStop = geometry?.stops?.firstOrNull()
+    val sent = tracking.fixesSent
+    return if (geometry != null && firstStop != null && geometry.routeShortName.isNotEmpty()) {
+        val startsAt = formatClock(firstStop.departureAt, geometry.timezone)
+        pluralStringResource(R.plurals.tracking_end_trip_dialog_message, sent, geometry.routeShortName, startsAt, sent)
+    } else {
+        pluralStringResource(R.plurals.tracking_end_trip_dialog_message_no_run, sent, sent)
+    }
+}
+
 /** The server did not confirm the end. Shared with the resume prompt, which ends trips through [TripEnder] too. */
 @Composable
 internal fun EndTripErrorDialog(onRetry: () -> Unit, onEndLocally: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        icon = { Icon(painterResource(R.drawable.ic_cloud_off), contentDescription = null) },
+        iconContentColor = AppTheme.problemColors.iconOnSurface,
         title = { Text(stringResource(R.string.tracking_end_trip_error_title)) },
         text = { Text(stringResource(R.string.tracking_end_trip_error_message)) },
-        confirmButton = {
-            TextButton(onClick = onRetry) {
-                Text(stringResource(R.string.tracking_end_trip_error_retry))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onEndLocally) {
-                Text(stringResource(R.string.tracking_end_trip_error_end_locally))
-            }
-        },
+        confirmButton = { InkButton(stringResource(R.string.tracking_end_trip_error_retry), onRetry) },
+        dismissButton = { QuietButton(stringResource(R.string.tracking_end_trip_error_end_locally), onEndLocally) },
     )
+}
+
+/** A dialog's main action, filled in ink rather than red: red means early on this screen. */
+@Composable
+private fun InkButton(text: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.onSurface,
+            contentColor = MaterialTheme.colorScheme.surface,
+        ),
+    ) {
+        Text(text)
+    }
+}
+
+/** A dialog's other action, in ink rather than the theme's green. */
+@Composable
+private fun QuietButton(text: String, onClick: () -> Unit) {
+    TextButton(onClick = onClick, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)) {
+        Text(text)
+    }
 }

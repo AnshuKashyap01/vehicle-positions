@@ -547,8 +547,8 @@ force-stop and relaunch again and tap **End Shift**.
 ### Check 5 — Ending the trip stops everything and the vehicle drops from the feed
 
 1. Reopen the app (if not already open) and tap **End trip** on the trip bar.
-2. Confirm in the dialog ("End this trip? This will stop location tracking
-   and mark the trip as complete.").
+2. Confirm in the dialog: **End this trip?**, which names route 1 and the run's
+   start time and says how many reports were sent.
 
 **Expected outcome, immediately** (the same from **End Shift** on the resume
 prompt):

@@ -88,13 +88,23 @@
     <string name="tracking_street_map_no_space">Not enough space</string>
     <string name="tracking_street_map_unusable">Not usable</string>
     <string name="tracking_end_trip_dialog_title">End this trip?</string>
-    <string name="tracking_end_trip_dialog_message">This will stop location tracking and mark the trip as complete.</string>
-    <string name="tracking_end_trip_dialog_confirm">End Trip</string>
-    <string name="tracking_end_trip_dialog_cancel">Cancel</string>
-    <string name="tracking_end_trip_error_title">Could not end trip</string>
-    <string name="tracking_end_trip_error_message">The server did not confirm the trip ended. You can retry, or end tracking on this device only.</string>
-    <string name="tracking_end_trip_error_retry">Retry</string>
-    <string name="tracking_end_trip_error_end_locally">End Locally</string>
+    <!-- The route's short name, the run's start time in the agency's zone, then how many reports reached the server. -->
+    <plurals name="tracking_end_trip_dialog_message">
+        <item quantity="one">Reports stop, and route %1$s\'s %2$s run is marked complete. %3$d report was sent.</item>
+        <item quantity="other">Reports stop, and route %1$s\'s %2$s run is marked complete. %3$d reports were sent.</item>
+    </plurals>
+    <!-- The same, for a trip whose route name or schedule the phone does not have. -->
+    <plurals name="tracking_end_trip_dialog_message_no_run">
+        <item quantity="one">Reports stop, and this run is marked complete. %1$d report was sent.</item>
+        <item quantity="other">Reports stop, and this run is marked complete. %1$d reports were sent.</item>
+    </plurals>
+    <string name="tracking_end_trip_dialog_confirm">End trip</string>
+    <string name="tracking_end_trip_dialog_cancel">Keep going</string>
+    <!-- The server did not confirm the end. Also on the resume prompt, after End Shift. -->
+    <string name="tracking_end_trip_error_title">Trip not ended yet</string>
+    <string name="tracking_end_trip_error_message">The server didn\'t confirm the end. Check your signal and try again, or stop reporting on this phone now.</string>
+    <string name="tracking_end_trip_error_retry">Try again</string>
+    <string name="tracking_end_trip_error_end_locally">End on this phone</string>
     <string name="tracking_reauth_button">Sign in</string>
     <!-- Between two parts of one line, e.g. "No connection · Riders can't see you". -->
     <string name="tracking_separator" translatable="false">·</string>
