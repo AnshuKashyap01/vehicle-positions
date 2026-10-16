@@ -217,11 +217,10 @@ it on its own, before or after the rest.
    missing style. Type `1` in the search box: route 1 stays and route 2 goes
    (the number is matched as a prefix). Type `loop` instead: route 2 comes back
    by long name. Clear the box again and tap **1 Straight**.
-4. **Select a Run** lists that route's runs for the agency's service date, one
-   row per run: the start time and the headsign over the first and last stop.
-   The clock times are the agency's, not the phone's — with the fixture's
-   `America/Los_Angeles` schedule, `8:00 AM → North` reads the same on a phone
-   set to any timezone. Tap it.
+4. **Choose a run** lists that route's runs for the agency's service date, one
+   row per run: the start time over the headsign. The clock times are the
+   agency's, not the phone's: with the fixture's `America/Los_Angeles` schedule,
+   `8:00 AM` over `North` reads the same on a phone set to any timezone. Tap it.
 5. Work through the permission sequence as it appears: fine+coarse location
    (grant precise), background location explanation → OS settings redirect
    (choose "Allow all the time"), notifications (allow), battery-optimization

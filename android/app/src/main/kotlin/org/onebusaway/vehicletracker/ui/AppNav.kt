@@ -11,6 +11,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavController
 import androidx.navigation.NavOptionsBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -32,6 +33,7 @@ import org.onebusaway.vehicletracker.di.ServiceAnnounceGrace
 import org.onebusaway.vehicletracker.ui.login.LoginScreen
 import org.onebusaway.vehicletracker.ui.resume.ResumeShiftScreen
 import org.onebusaway.vehicletracker.ui.routes.RoutesScreen
+import org.onebusaway.vehicletracker.ui.routes.routeColorHex
 import org.onebusaway.vehicletracker.ui.runs.RunsScreen
 import org.onebusaway.vehicletracker.ui.tracking.TrackingScreen
 import org.onebusaway.vehicletracker.ui.vehicles.VehicleScreen
@@ -45,13 +47,17 @@ private const val ROUTE_LOGIN = "login"
 private const val ROUTE_LOGIN_REAUTH = "login_reauth"
 private const val ROUTE_VEHICLES = "vehicles"
 private const val ROUTE_ROUTES = "trip/{vehicleId}"
-private const val ROUTE_RUNS = "trip/{vehicleId}/routes/{routeId}"
+// The route's badge rides along as optional arguments: the runs reply names only the route's id.
+private const val ROUTE_RUNS = "trip/{vehicleId}/routes/{routeId}?name={routeName}&color={routeColor}&text={routeTextColor}"
 private const val ROUTE_TRACKING = "tracking"
 private const val ROUTE_RESUME = "resume"
-// Not private: RunsViewModel reads both out of its SavedStateHandle, and the names have to
+// Not private: RunsViewModel reads them out of its SavedStateHandle, and the names have to
 // be the ones the nav graph wrote.
 internal const val ARG_VEHICLE_ID = "vehicleId"
 internal const val ARG_ROUTE_ID = "routeId"
+internal const val ARG_ROUTE_NAME = "routeName"
+internal const val ARG_ROUTE_COLOR = "routeColor"
+internal const val ARG_ROUTE_TEXT_COLOR = "routeTextColor"
 
 /**
  * A path argument for a string route. A GTFS `route_id` is arbitrary text — spaces, slashes
@@ -63,6 +69,16 @@ private fun arg(value: String): String = Uri.encode(value)
 // Reading one back needs no matching decode: NavDeepLink.getMatchingPathArguments already runs
 // every captured path argument through NavUriUtils.decode before it reaches the bundle.
 private fun NavBackStackEntry.pathArg(name: String): String = arguments?.getString(name).orEmpty()
+
+/**
+ * Back to the bus step, to choose another bus. After the one-bus skip there is no bus step to go back to, so a fresh
+ * one replaces the flow: it loads the assignments again, and skips once more if there is still only one.
+ */
+private fun NavController.toBusStep() {
+    if (!popBackStack(ROUTE_VEHICLES, inclusive = false)) {
+        navigate(ROUTE_VEHICLES) { popUpTo(0) { inclusive = true } }
+    }
+}
 
 /**
  * How the app leaves the bus step when the driver has only one bus: the route step takes its place. Left on the back
@@ -163,8 +179,12 @@ fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltVi
             val vehicleId = backStackEntry.pathArg(ARG_VEHICLE_ID)
             ClearOfSystemBars {
                 RoutesScreen(
-                    onRouteSelected = { routeId ->
-                        navController.navigate("trip/${arg(vehicleId)}/routes/${arg(routeId)}")
+                    onRouteSelected = { route ->
+                        val badge = route.badge
+                        navController.navigate(
+                            "trip/${arg(vehicleId)}/routes/${arg(route.id)}?name=${arg(badge.shortName)}" +
+                                "&color=${arg(routeColorHex(badge.color))}&text=${arg(routeColorHex(badge.textColor))}",
+                        )
                     },
                 )
             }
@@ -174,16 +194,21 @@ fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltVi
             arguments = listOf(
                 navArgument(ARG_VEHICLE_ID) { type = NavType.StringType },
                 navArgument(ARG_ROUTE_ID) { type = NavType.StringType },
+                navArgument(ARG_ROUTE_NAME) { defaultValue = "" },
+                navArgument(ARG_ROUTE_COLOR) { defaultValue = "" },
+                navArgument(ARG_ROUTE_TEXT_COLOR) { defaultValue = "" },
             ),
         ) {
             ClearOfSystemBars {
-                // vehicleId and routeId reach RunsViewModel through its SavedStateHandle.
+                // The arguments reach RunsViewModel through its SavedStateHandle.
                 RunsScreen(
                     onTripStarted = {
                         navController.navigate(ROUTE_TRACKING) {
                             popUpTo(0) { inclusive = true }
                         }
                     },
+                    onChangeBus = { navController.toBusStep() },
+                    onChooseAnotherRoute = { navController.popBackStack() },
                 )
             }
         }

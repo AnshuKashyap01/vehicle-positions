@@ -53,7 +53,7 @@ private val TitleTop = 64.dp
 
 @Composable
 fun RoutesScreen(
-    onRouteSelected: (String) -> Unit,
+    onRouteSelected: (RouteItem) -> Unit,
     viewModel: RoutesViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -73,7 +73,7 @@ fun RoutesScreen(
 @Composable
 fun RoutesScreenContent(
     state: RoutesUiState,
-    onRouteClick: (String) -> Unit,
+    onRouteClick: (RouteItem) -> Unit,
     onQueryChange: (String) -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -117,7 +117,7 @@ fun RoutesScreenContent(
 
 private fun LazyGridScope.loaded(
     state: RoutesUiState.Loaded,
-    onRouteClick: (String) -> Unit,
+    onRouteClick: (RouteItem) -> Unit,
     onQueryChange: (String) -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -204,19 +204,19 @@ private fun LazyGridScope.label(key: String, text: @Composable () -> String) {
 
 /** A route as a big badge alone, in the Recent row and the grid; TalkBack reads it as "Route 7". */
 @Composable
-private fun BigBadge(route: RouteItem, onRouteClick: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun BigBadge(route: RouteItem, onRouteClick: (RouteItem) -> Unit, modifier: Modifier = Modifier) {
     val description = stringResource(R.string.setup_route, route.badge.shortName)
     RouteBadge(
         route = route.badge,
         modifier = modifier
             .height(56.dp)
             .clip(BigBadgeShape)
-            .clickable(role = Role.Button) { onRouteClick(route.id) }
+            .clickable(role = Role.Button) { onRouteClick(route) }
             .clearAndSetSemantics {
                 contentDescription = description
                 role = Role.Button
                 onClick {
-                    onRouteClick(route.id)
+                    onRouteClick(route)
                     true
                 }
             },
@@ -227,13 +227,13 @@ private fun BigBadge(route: RouteItem, onRouteClick: (String) -> Unit, modifier:
 
 /** A route as a row: its badge, then its long name on one line. */
 @Composable
-private fun RouteRow(route: RouteItem, onRouteClick: (String) -> Unit, modifier: Modifier = Modifier) {
+private fun RouteRow(route: RouteItem, onRouteClick: (RouteItem) -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 60.dp)
             .clip(RowBadgeShape)
-            .clickable(role = Role.Button) { onRouteClick(route.id) }
+            .clickable(role = Role.Button) { onRouteClick(route) }
             .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,

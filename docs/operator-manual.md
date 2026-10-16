@@ -253,7 +253,8 @@ whichever bus is free — and a vehicle may be assigned to several drivers.
 
 If a driver tries to start a trip on a vehicle that is not assigned to them, the
 server refuses (`403 driver is not assigned to this vehicle`) and the app shows
-**You are not assigned to this vehicle.** Note the one thing this does *not*
+**You're not assigned to bus 4317.**, with the bus's number, and a **Change
+bus** button. Note the one thing this does *not*
 cover: the assignment is checked when a trip is started, not on each individual
 location report. In normal use that is the same thing, because the app only
 reports while a trip is running.
@@ -302,12 +303,14 @@ takes about ten minutes. Before you start, make sure the driver has an account
      driver needs is missing, tell your IT contact: a route is listed only if
      the GTFS feed gives at least one of its trips a shape (the line drawn on
      the map).
-   - **Select a Run** lists that route's runs for today: the start time, where
-     the run is headed, and its first and last stop. The times are your
-     agency's local time, whatever time zone the phone is set to. The run under
-     way is marked **Now**; otherwise the next one to start is marked **Next**.
-     Tap the run the driver is about to drive. **No runs on this route today.**
-     means the schedule has no service on that route today.
+   - **Choose a run** shows that route's runs for today as a departure board:
+     each run's start time over where it is headed, with a line at the current
+     time. When the schedule gives the route two directions, a switch at the top
+     picks one, named after where its runs go. The times are your agency's local
+     time, whatever time zone the phone is set to. The run under way is marked
+     **Now**; otherwise the next one to start is marked **Next**. Tap the run
+     the driver is about to drive. **No runs on route 7 today** means the
+     schedule has no service on that route today.
 
    The route and trip the app reports both come from the schedule, so as long
    as OneBusAway uses the same GTFS feed (your IT contact sets this up), it can
@@ -546,8 +549,8 @@ points are.
 
 | Symptom | Likely cause | What to do |
 |---|---|---|
-| Driver sees **You are not assigned to this vehicle.** after tapping a run on **Select a Run** | The vehicle is not assigned to that driver, or the assignment was removed. | **Users** → **Edit** the driver → **Assigned vehicles** → pick the vehicle → **Assign**. Then have them tap the run again. |
-| Driver sees **You already have an active trip.** | An earlier trip was never ended, usually because it was started on another phone or the app was reinstalled. | Have the driver open the app on the phone that started the trip; it returns to the tracking screen for the old trip, where **End trip** ends it. Confirm on **Trips** → **Active** that it is gone. If the app no longer knows about the trip, ask your IT contact: there is no button in the admin UI to end another person's trip. |
+| Driver sees **You're not assigned to bus 4317.** after tapping a run on **Choose a run** | The vehicle is not assigned to that driver, or the assignment was removed. | **Users** → **Edit** the driver → **Assigned vehicles** → pick the vehicle → **Assign**. Then have them tap the run again. |
+| Driver sees **You already have a trip running. End it before starting another.** | An earlier trip was never ended, usually because it was started on another phone or the app was reinstalled. | Have the driver open the app on the phone that started the trip; it returns to the tracking screen for the old trip, where **End trip** ends it. Confirm on **Trips** → **Active** that it is gone. If the app no longer knows about the trip, ask your IT contact: there is no button in the admin UI to end another person's trip. |
 | Driver sees **No buses are assigned to you** | No active vehicle is assigned to that account. | Check the vehicle is not deactivated (**Vehicles** → **Show deactivated**), then assign it (section 6) and have the driver tap **Check again**. |
 | One vehicle missing from the feed and the map, others fine | That phone has stopped reporting for longer than the staleness threshold: no signal, app closed, trip never started, phone battery dead, or Android killed the app in the background. | Ask the driver what the line under the status card says. **No connection** is a coverage problem and clears itself. If the app is not on the tracking screen at all, the trip was never started or was ended. If it keeps dying when the screen locks, the background-location permission is not **"Allow all the time"**: redo step 6 of section 7. |
 | Feed completely empty during service hours | Nothing is reporting, or the server lost its database. | Check **Dashboard**: if **Feed last updated** says **never** (nothing has reported for several minutes) and **Active Trips** is 0, it is the phones — start with two or three drivers. If **Active Trips** is healthy but nothing is in the feed, contact IT: see the monitoring checks in [`deployment.md` §9](deployment.md#9-monitoring). |

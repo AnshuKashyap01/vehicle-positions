@@ -1,5 +1,6 @@
 package org.onebusaway.vehicletracker.ui
 
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +38,7 @@ import org.onebusaway.vehicletracker.ui.routes.RouteItem
 import org.onebusaway.vehicletracker.ui.routes.RoutesUiState
 import org.onebusaway.vehicletracker.ui.routes.RoutesViewModel
 import org.onebusaway.vehicletracker.ui.routes.showsAsGrid
+import org.onebusaway.vehicletracker.ui.runs.BoardRun
 import org.onebusaway.vehicletracker.ui.runs.RunHighlight
 import org.onebusaway.vehicletracker.ui.runs.RunsUiState
 import org.onebusaway.vehicletracker.ui.runs.RunsViewModel
@@ -556,6 +558,7 @@ class ViewModelsTest {
         startResponses: List<MockResponse> = emptyList(),
         endResponse: () -> MockResponse = { MockResponse().setBody("""{"status":"trip ended"}""") },
         geometryStore: TripGeometryStore = FakeTripGeometryStore(),
+        extraArgs: Map<String, String> = emptyMap(),
         block: (RunsViewModel, MockWebServer, FakeServiceController, FakeTripStateStore) -> Unit,
     ) {
         val server = MockWebServer().apply { start() }
@@ -579,7 +582,7 @@ class ViewModelsTest {
             val serviceController = FakeServiceController()
             // The nav graph's arguments, which is where the ViewModel reads them from — and it
             // loads off them in init, with no load() call from the screen.
-            val args = SavedStateHandle(mapOf("vehicleId" to "bus-1", "routeId" to "R1"))
+            val args = SavedStateHandle(mapOf("vehicleId" to "bus-1", "routeId" to "R1") + extraArgs)
             val vm = RunsViewModel(args, CatalogRepository(provider), tripRepository, geometryStore, serviceController, clock)
             awaitCondition(description = "runs settled") { vm.uiState.value !is RunsUiState.Loading }
             block(vm, server, serviceController, tripState)
@@ -598,8 +601,9 @@ class ViewModelsTest {
     @Test fun `the run under way is badged Now`() = runTest(dispatcher) {
         withRunsViewModel(now = "2026-09-22T08:05:00-07:00") { vm, _, _, _ ->
             val state = loadedRuns(vm)
-            assertEquals("T1", state.highlightedId)
-            assertEquals(RunHighlight.NOW, state.highlight)
+            val runs = state.boards.flatMap { it.runs }.associateBy { it.id }
+            assertEquals(RunHighlight.NOW, runs.getValue("T1").highlight)
+            assertNull(runs.getValue("T4").highlight)
             // The zone is the agency's, read off the response rather than off the device.
             assertEquals("America/Los_Angeles", state.page.timezone.id)
         }
@@ -607,9 +611,9 @@ class ViewModelsTest {
 
     @Test fun `the next run to start is badged Next once the earlier one is over`() = runTest(dispatcher) {
         withRunsViewModel(now = "2026-09-22T09:00:00-07:00") { vm, _, _, _ ->
-            val state = loadedRuns(vm)
-            assertEquals("T4", state.highlightedId)
-            assertEquals(RunHighlight.NEXT, state.highlight)
+            val runs = loadedRuns(vm).boards.flatMap { it.runs }.associateBy { it.id }
+            assertEquals(RunHighlight.NEXT, runs.getValue("T4").highlight)
+            assertTrue("the run before it has gone", runs.getValue("T1").past)
         }
     }
 
@@ -620,7 +624,7 @@ class ViewModelsTest {
             // the catalog.
             val state = loadedRuns(vm)
             assertEquals(emptyList<String>(), state.page.runs.map { it.id })
-            assertNull(state.highlightedId)
+            assertEquals(emptyList<BoardRun>(), state.boards.single().runs)
         }
     }
 
@@ -631,6 +635,14 @@ class ViewModelsTest {
             assertEquals("/api/v1/gtfs/routes/R1/trips", server.takeRequest().path)
             assertEquals(1, server.requestCount)
             assertEquals(listOf("T1", "T4"), loadedRuns(vm).page.runs.map { it.id })
+        }
+    }
+
+    @Test fun `the route's badge comes from the nav arguments, read once`() = runTest(dispatcher) {
+        val routeArgs = mapOf("routeName" to "E Line", "routeColor" to "9C182F", "routeTextColor" to "FFFFFF")
+        withRunsViewModel(extraArgs = routeArgs) { vm, _, _, _ ->
+            assertEquals(RouteBadgeModel("E Line", Color(0xFF9C182F), Color(0xFFFFFFFF)), vm.route)
+            assertEquals("bus-1", vm.vehicleId)
         }
     }
 

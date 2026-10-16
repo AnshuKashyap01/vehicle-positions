@@ -14,4 +14,7 @@ internal object AppMotion {
 
     /** For colour and opacity, such as the status card changing tone. It never overshoots. */
     fun <T> defaultEffectsSpec(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 1600f)
+
+    /** The quicker of the two, for a swap the driver asked for, such as the departure board changing direction. */
+    fun <T> fastEffectsSpec(): FiniteAnimationSpec<T> = spring(dampingRatio = 1f, stiffness = 3800f)
 }

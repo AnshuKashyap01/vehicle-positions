@@ -69,25 +69,33 @@
     <string name="routes_badge_placeholder">\u2014</string>
 
     <!-- Run picker -->
-    <string name="runs_title">Select a Run</string>
-    <string name="runs_empty">No runs on this route today.</string>
+    <string name="runs_title">Choose a run</string>
+    <!-- The route's number, e.g. "No runs on route 7 today". -->
+    <string name="runs_empty">No runs on route %1$s today</string>
+    <string name="runs_empty_detail">Pick another route, or check again tomorrow.</string>
+    <string name="runs_choose_another_route">Choose another route</string>
+    <!-- On the run under way or next to start, and, for TalkBack, on the line between the runs gone and the rest. -->
     <string name="runs_badge_now">Now</string>
     <string name="runs_badge_next">Next</string>
-    <!-- Start time, then where the run is headed. -->
-    <string name="runs_row_headsign">%1$s \u2192 %2$s</string>
-    <!-- First stop, then last stop. -->
+    <!-- The direction switch: where most runs that way are headed, e.g. "To Downtown Seattle". -->
+    <string name="runs_direction">To %1$s</string>
+    <!-- Under the date: the first stop, then the last stop, of the direction shown. -->
     <string name="runs_row_stops">%1$s \u2192 %2$s</string>
+    <!-- What TalkBack says on the run being started. -->
     <string name="runs_starting">Starting\u2026</string>
-    <string name="runs_error_message">Could not load this route\'s runs.</string>
-    <string name="runs_retry_button">Retry</string>
-    <string name="runs_error_not_assigned">You are not assigned to this vehicle.</string>
-    <string name="runs_error_trip_active">You already have an active trip.</string>
+    <string name="runs_error_message">Couldn\'t load the runs</string>
+    <string name="runs_error_detail">Check your connection and try again.</string>
+    <string name="runs_retry_button">Try again</string>
+    <!-- The bus the driver chose, e.g. "You're not assigned to bus 4317." -->
+    <string name="runs_error_not_assigned">You\'re not assigned to bus %1$s.</string>
+    <string name="runs_change_bus">Change bus</string>
+    <string name="runs_error_trip_active">You already have a trip running. End it before starting another.</string>
     <string name="runs_error_previous_trip_not_ended">Your previous trip could not be ended yet. Check your connection and try again.</string>
-    <string name="runs_error_network">Could not reach the server. Check your connection.</string>
-    <string name="runs_error_no_geometry">This run has no shape or stops to follow.</string>
-    <string name="runs_error_trip_not_active">The schedule has moved on to a new day since this list was loaded. Reload it to pick a run.</string>
+    <string name="runs_error_network">Can\'t reach the server. Check your connection.</string>
+    <string name="runs_error_no_geometry">This run has no route or stops to follow. Pick another run.</string>
+    <string name="runs_error_trip_not_active">The schedule moved on to a new day.</string>
     <string name="runs_reload_button">Reload</string>
-    <string name="runs_error_other">Could not start the trip.</string>
+    <string name="runs_error_other">Couldn\'t start the trip.</string>
 
     <!-- Tracking screen -->
     <!-- The tracking notification's text. The screen says the same things in its own words, below. -->
