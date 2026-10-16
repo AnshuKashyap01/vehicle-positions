@@ -11,6 +11,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavOptionsBuilder
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -62,6 +63,12 @@ private fun arg(value: String): String = Uri.encode(value)
 // Reading one back needs no matching decode: NavDeepLink.getMatchingPathArguments already runs
 // every captured path argument through NavUriUtils.decode before it reaches the bundle.
 private fun NavBackStackEntry.pathArg(name: String): String = arguments?.getString(name).orEmpty()
+
+/**
+ * How the app leaves the bus step when the driver has only one bus: the route step takes its place. Left on the back
+ * stack, the bus step would be where Back lands, and it would skip straight forward again.
+ */
+internal val skipBusStep: NavOptionsBuilder.() -> Unit = { popUpTo(ROUTE_VEHICLES) { inclusive = true } }
 
 /** Determines which route the app should land on at launch, based on persisted session/trip state. */
 @HiltViewModel
@@ -145,6 +152,7 @@ fun AppNav(modifier: Modifier = Modifier, navViewModel: AppNavViewModel = hiltVi
             ClearOfSystemBars {
                 VehicleScreen(
                     onVehicleSelected = { vehicleId -> navController.navigate("trip/${arg(vehicleId)}") },
+                    onOnlyVehicle = { vehicleId -> navController.navigate("trip/${arg(vehicleId)}", skipBusStep) },
                 )
             }
         }

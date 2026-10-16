@@ -51,9 +51,14 @@ private val TileGap = 12.dp
 // same height so the title does not jump as the screens slide.
 private val TitleTop = 64.dp
 
+/**
+ * [onVehicleSelected] is a tap on a tile. [onOnlyVehicle] is the bus a driver with one assignment never has to
+ * choose, and takes the bus step's place: navigating there leaves nothing behind it that would skip forward again.
+ */
 @Composable
 fun VehicleScreen(
     onVehicleSelected: (String) -> Unit,
+    onOnlyVehicle: (String) -> Unit,
     viewModel: VehicleViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -63,7 +68,7 @@ fun VehicleScreen(
     // reason: narrowing a search to one match must not navigate the driver away.
     val autoSelectId = (state as? VehiclesUiState.Loaded)?.autoSelectId
     LaunchedEffect(autoSelectId) {
-        if (autoSelectId != null) onVehicleSelected(autoSelectId)
+        if (autoSelectId != null) onOnlyVehicle(autoSelectId)
     }
 
     VehicleScreenContent(
