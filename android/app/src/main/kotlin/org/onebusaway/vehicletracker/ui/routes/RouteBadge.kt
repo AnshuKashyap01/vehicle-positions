@@ -12,7 +12,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.onebusaway.vehicletracker.R
-import org.onebusaway.vehicletracker.data.api.RouteDto
 
 private const val HEX_DIGITS = 6
 private const val OPAQUE_ALPHA = 0xFF000000L
@@ -29,13 +28,16 @@ fun routeColorArgb(hex: String): Long? {
     return OPAQUE_ALPHA or value
 }
 
-/** The route's short name on its GTFS colour, as riders see it. */
+/**
+ * A route's short name on its GTFS colour, as riders see it. [color] and [textColor] are the feed's six hex
+ * digits; the route list reads them off the route, and the Tracking screen off the trip it keeps.
+ */
 @Composable
-fun RouteBadge(route: RouteDto) {
-    val background = routeColorArgb(route.color)?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
-    val foreground = routeColorArgb(route.textColor)?.let { Color(it) } ?: MaterialTheme.colorScheme.onPrimary
+fun RouteBadge(shortName: String, color: String, textColor: String) {
+    val background = routeColorArgb(color)?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
+    val foreground = routeColorArgb(textColor)?.let { Color(it) } ?: MaterialTheme.colorScheme.onPrimary
     Text(
-        text = route.shortName.ifEmpty { stringResource(R.string.routes_badge_placeholder) },
+        text = shortName.ifEmpty { stringResource(R.string.routes_badge_placeholder) },
         color = foreground,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
