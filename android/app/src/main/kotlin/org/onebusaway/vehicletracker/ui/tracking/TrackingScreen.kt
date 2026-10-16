@@ -1,26 +1,32 @@
 package org.onebusaway.vehicletracker.ui.tracking
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.BottomSheetScaffold
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberBottomSheetScaffoldState
+import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -28,18 +34,22 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.onebusaway.vehicletracker.R
 import org.onebusaway.vehicletracker.ui.map.RouteMap
 import org.onebusaway.vehicletracker.ui.map.glEsVersion
@@ -47,6 +57,9 @@ import org.onebusaway.vehicletracker.ui.map.supportsMap
 
 /** The gap between the screen's edges and the status card floating over the map. */
 private val CardMargin = 12.dp
+
+/** How far the panel is pulled up before the rows under the trip bar have fully come in: about one row. */
+private val RowsFadeDistance = 48.dp
 
 @Composable
 fun TrackingScreen(
@@ -67,11 +80,11 @@ fun TrackingScreen(
         onEndTripLocallyClick = { viewModel.onEndTripLocally(onTripEnded) },
         onDismissError = viewModel::dismissEndTripError,
         onReauthClick = onReauthRequired,
-        map = { modifier, contentPadding ->
+        map = { modifier, contentPadding, controlsPadding ->
             // With no geometry there is no route to draw, and the status card already says so.
             val geometry = state.tracking.geometry
             if (mapSupported && geometry != null) {
-                RouteMap(geometry, state.tracking.adherence, state.mapFile, contentPadding, modifier)
+                RouteMap(geometry, state.tracking.adherence, state.mapFile, contentPadding, controlsPadding, modifier)
             } else {
                 Spacer(modifier)
             }
@@ -79,6 +92,7 @@ fun TrackingScreen(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TrackingScreenContent(
     state: TrackingUiState,
@@ -87,66 +101,89 @@ fun TrackingScreenContent(
     onDismissError: () -> Unit,
     onReauthClick: () -> Unit,
     // The map is handed in so that this screen can be shown, in tests and previews, with no
-    // OpenGL behind it. It fills the screen, and its padding says how much of it the status card
-    // and the footer cover.
-    map: @Composable (Modifier, PaddingValues) -> Unit = { modifier, _ -> Spacer(modifier) },
+    // OpenGL behind it. It fills the screen: its content padding says how much of it the status
+    // card and the trip panel cover, and its controls padding where its own buttons go, above
+    // the trip bar.
+    map: @Composable (modifier: Modifier, contentPadding: PaddingValues, controlsPadding: PaddingValues) -> Unit =
+        { modifier, _, _ -> Spacer(modifier) },
 ) {
     var showConfirmDialog by remember { mutableStateOf(false) }
-    var cardHeight by remember { mutableIntStateOf(0) }
-    var footerHeight by remember { mutableIntStateOf(0) }
     val density = LocalDensity.current
+    var cardHeight by remember { mutableIntStateOf(0) }
+    var statusAreaHeight by remember { mutableIntStateOf(0) }
+    // Material's drag handle and a bar of one line of text: what the panel shows before they are measured.
+    var handleHeight by remember { mutableIntStateOf(with(density) { 48.dp.roundToPx() }) }
+    var barHeight by remember { mutableIntStateOf(with(density) { 68.dp.roundToPx() }) }
+    var panelHeight by remember { mutableIntStateOf(0) }
+    val sheetState = rememberStandardBottomSheetState(skipHiddenState = true)
+    val scope = rememberCoroutineScope()
+
     val statusInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
-    val mapPadding = with(density) {
-        PaddingValues(top = statusInsets.getTop(density).toDp() + CardMargin + cardHeight.toDp(), bottom = footerHeight.toDp())
-    }
+    val cardBottom = with(density) { (statusInsets.getTop(density) + cardHeight).toDp() } + CardMargin
+    val navigationBarPx = WindowInsets.navigationBars.getBottom(density)
+    val peekHeight = with(density) { (handleHeight + barHeight + navigationBarPx).toDp() }
+    // Read where the panel settles, never while it is dragged: MapLibre jitters if its padding
+    // changes on every frame.
+    val expanded = sheetState.currentValue == SheetValue.Expanded
+    val mapPadding = PaddingValues(
+        top = cardBottom,
+        bottom = if (expanded) with(density) { (handleHeight + panelHeight).toDp() } else peekHeight,
+    )
+    val controlsPadding = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal).asPaddingValues()
+        .let { PaddingValues(start = it.calculateStartPadding(LocalLayoutDirection.current), bottom = peekHeight) }
+    val model = statusCardModel(state.tracking, state.activeTrip?.vehicleId)
+
+    BackHandler(enabled = expanded) { scope.launch { sheetState.partialExpand() } }
 
     // Unlike the other screens, Tracking draws under the system bars: the map fills the whole
-    // screen, and the status card and the footer float over it, each clear of its bar.
-    Box(modifier = Modifier.fillMaxSize()) {
-        map(Modifier.fillMaxSize(), mapPadding)
-        StatusArea(
-            model = statusCardModel(state.tracking, state.activeTrip?.vehicleId),
-            problem = state.tracking.problem,
-            onSignIn = onReauthClick,
-            modifier = Modifier.fillMaxWidth().windowInsetsPadding(statusInsets).padding(CardMargin),
-            onCardHeightChanged = { cardHeight = it },
-        )
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .onSizeChanged { footerHeight = it.height },
-        ) {
-            Column(
-                modifier = Modifier
-                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) {
-                state.activeTrip?.let { trip ->
-                    Text(
-                        text = stringResource(R.string.tracking_route_label, trip.routeId),
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-                TripDuration(startedAtEpochSec = state.tracking.tripStartedAtEpochSec ?: state.activeTrip?.startedAtEpochSec)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.tracking_fixes_sent_label, state.tracking.fixesSent),
-                    style = MaterialTheme.typography.bodyLarge,
+    // screen, the status card floats over its top, clear of the status bar, and the trip bar
+    // pulls up from its bottom into the panel.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        // The panel stops below the status area when pulled all the way up, where it would
+        // otherwise slide under the card, or under the problem line or Signed out card below it.
+        // The map keeps its padding from the card alone, so it never moves when a problem comes.
+        val panelMaxHeight = maxHeight - with(density) { (statusAreaHeight + handleHeight).toDp() }
+        val collapsedTop = constraints.maxHeight - with(density) { peekHeight.toPx() }
+        val rowsFade = with(density) { RowsFadeDistance.toPx() }
+        BottomSheetScaffold(
+            scaffoldState = rememberBottomSheetScaffoldState(bottomSheetState = sheetState),
+            sheetPeekHeight = peekHeight,
+            sheetDragHandle = {
+                BottomSheetDefaults.DragHandle(
+                    modifier = Modifier.onSizeChanged { handleHeight = it.height },
+                    width = 40.dp,
+                    height = 4.dp,
+                    color = MaterialTheme.colorScheme.outline,
                 )
-                Spacer(Modifier.height(12.dp))
-                Button(
-                    onClick = { showConfirmDialog = true },
-                    enabled = !state.ending,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.onSurface,
-                        contentColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
-                ) {
-                    Text(stringResource(R.string.tracking_end_trip_button))
-                }
+            },
+            sheetContent = {
+                TripPanel(
+                    state = state,
+                    model = model,
+                    onEndTripClick = { showConfirmDialog = true },
+                    onBarClick = { scope.launch { sheetState.expand() } },
+                    onBarHeightChanged = { barHeight = it },
+                    // Before the panel's first placement there is no offset to read.
+                    rowsAlpha = { panelRowsAlpha(collapsedTop, runCatching { sheetState.requireOffset() }.getOrNull(), rowsFade) },
+                    navigationBarPx = navigationBarPx,
+                    modifier = Modifier.heightIn(max = panelMaxHeight).onSizeChanged { panelHeight = it.height },
+                )
+            },
+        ) {
+            Box(Modifier.fillMaxSize()) {
+                map(Modifier.fillMaxSize(), mapPadding, controlsPadding)
+                StatusArea(
+                    model = model,
+                    problem = state.tracking.problem,
+                    onSignIn = onReauthClick,
+                    // Measured outside its insets and margins, so the panel's limit counts them too.
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged { statusAreaHeight = it.height }
+                        .windowInsetsPadding(statusInsets)
+                        .padding(CardMargin),
+                    onCardHeightChanged = { cardHeight = it },
+                )
             }
         }
     }
@@ -182,7 +219,7 @@ fun TrackingScreenContent(
  * second recomposes this text alone and not the status card or the map.
  */
 @Composable
-private fun TripDuration(startedAtEpochSec: Long?) {
+internal fun TripDuration(startedAtEpochSec: Long?, style: TextStyle, color: Color) {
     var elapsedSeconds by remember { mutableLongStateOf(0L) }
     LaunchedEffect(startedAtEpochSec) {
         if (startedAtEpochSec != null) {
@@ -192,10 +229,7 @@ private fun TripDuration(startedAtEpochSec: Long?) {
             }
         }
     }
-    Text(
-        text = stringResource(R.string.tracking_duration_label, formatDuration(elapsedSeconds)),
-        style = MaterialTheme.typography.bodyLarge,
-    )
+    Text(text = formatDuration(elapsedSeconds), style = style, color = color)
 }
 
 /** The server did not confirm the end. Shared with the resume prompt, which ends trips through [TripEnder] too. */

@@ -63,10 +63,30 @@
     <string name="tracking_status_no_gps">GPS unavailable</string>
     <string name="tracking_status_clock_skew">Check device clock</string>
     <string name="tracking_status_auth_expired">Session expired – log in again</string>
-    <string name="tracking_route_label">Route %1$s</string>
-    <string name="tracking_duration_label">Trip duration: %1$s</string>
-    <string name="tracking_fixes_sent_label">Location updates sent: %1$d</string>
-    <string name="tracking_end_trip_button">End Trip</string>
+    <!-- The trip bar: the trip's running time, then how many reports have reached the server. -->
+    <plurals name="tracking_bar_sent">
+        <item quantity="one">%1$d sent</item>
+        <item quantity="other">%1$d sent</item>
+    </plurals>
+    <!-- What tapping the trip bar does, for TalkBack. -->
+    <string name="tracking_bar_click_label">Show trip details</string>
+    <string name="tracking_end_trip_button">End trip</string>
+    <string name="tracking_end_trip_ending">Ending…</string>
+    <!-- The rows at the top of the panel the trip bar pulls up into. -->
+    <string name="tracking_fact_run">Run</string>
+    <!-- The run's start time in the agency's zone, then the vehicle, e.g. "6:58 AM · 4317". -->
+    <string name="tracking_fact_run_vehicle">%1$s · %2$s</string>
+    <string name="tracking_fact_reports">Reports</string>
+    <string name="tracking_reports_reporting">Reporting</string>
+    <string name="tracking_reports_not_reporting">Not reporting</string>
+    <string name="tracking_reports_no_gps">No GPS</string>
+    <string name="tracking_reports_stopped">Reports stopped</string>
+    <string name="tracking_fact_street_map">Street map</string>
+    <string name="tracking_street_map_ready">Ready</string>
+    <string name="tracking_street_map_downloading">Downloading · %1$d%%</string>
+    <string name="tracking_street_map_not_downloaded">Not downloaded yet</string>
+    <string name="tracking_street_map_no_space">Not enough space</string>
+    <string name="tracking_street_map_unusable">Not usable</string>
     <string name="tracking_end_trip_dialog_title">End this trip?</string>
     <string name="tracking_end_trip_dialog_message">This will stop location tracking and mark the trip as complete.</string>
     <string name="tracking_end_trip_dialog_confirm">End Trip</string>

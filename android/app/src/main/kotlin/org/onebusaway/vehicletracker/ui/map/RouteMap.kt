@@ -15,13 +15,23 @@ import android.os.SystemClock
 import android.text.TextPaint
 import android.text.TextUtils
 import android.util.TypedValue
+import android.view.Gravity
 import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -105,6 +116,7 @@ private const val NEXT_STOP_RADIUS = 9f - STOP_RING_WIDTH
 private const val SNAPPED_OUTER_RADIUS = 5f
 private const val SNAPPED_INNER_RADIUS = 3f
 private const val FIT_PADDING_DP = 40
+private const val ATTRIBUTION_MARGIN_DP = 16f
 private const val LABEL_TEXT_SP = 13f
 private const val LABEL_GAP_DP = 6f
 private const val LABEL_HALO_DP = 1.5f
@@ -136,7 +148,8 @@ fun Context.glEsVersion(): Int = getSystemService(ActivityManager::class.java).d
  * matched position while it is off the route. The camera follows heading-up with the vehicle a
  * third of the way up the part of the map that [contentPadding], the screen's own cards and bars
  * over it, leaves uncovered. Under it is the agency's street map once the file is on the phone,
- * and a plain background until then, with a note while the first copy downloads.
+ * and a plain background until then, with a note while the first copy downloads. The note and
+ * Re-center sit at the bottom left, inside [controlsPadding].
  */
 @Composable
 fun RouteMap(
@@ -144,6 +157,7 @@ fun RouteMap(
     adherence: Adherence?,
     mapFile: MapFileState,
     contentPadding: PaddingValues,
+    controlsPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -181,33 +195,80 @@ fun RouteMap(
             modifier = Modifier.fillMaxSize(),
             onRelease = { controller.destroy() },
         )
-        MapFileNote(mapFile, Modifier.align(Alignment.TopStart).padding(contentPadding).padding(8.dp))
-        if (!controller.following) {
-            FilledTonalButton(
-                onClick = controller::follow,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(contentPadding).padding(12.dp),
-            ) {
-                Text(stringResource(R.string.tracking_map_recenter))
-            }
+        // Clear of the attribution button at the bottom right.
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(controlsPadding)
+                .padding(start = 12.dp, end = 64.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            MapFileNote(mapFile)
+            if (!controller.following) RecenterChip(onClick = controller::follow)
         }
     }
 }
 
-/** A line over the map while it has no streets to show yet. Nothing once it has, or when the agency has no map. */
+private val NoteShape = RoundedCornerShape(22.dp)
+
 @Composable
-private fun MapFileNote(state: MapFileState, modifier: Modifier = Modifier) {
-    val text = when (state) {
-        is MapFileState.Downloading -> stringResource(R.string.tracking_map_downloading, downloadPercent(state.bytes, state.total))
-        is MapFileState.Failed -> stringResource(mapFailureNote(state.reason))
+private fun RecenterChip(onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shadowElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier.heightIn(min = 48.dp).padding(start = 14.dp, end = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(painterResource(R.drawable.ic_navigation), contentDescription = null, modifier = Modifier.size(22.dp))
+            Text(stringResource(R.string.tracking_map_recenter), style = MaterialTheme.typography.titleSmall)
+        }
+    }
+}
+
+/** A note over the map while it has no streets to show yet. Nothing once it has, or when the agency has no map. */
+@Composable
+private fun MapFileNote(state: MapFileState) {
+    val icon: Int
+    val text: String
+    when (state) {
+        is MapFileState.Downloading -> {
+            icon = R.drawable.ic_download
+            text = stringResource(R.string.tracking_map_downloading, downloadPercent(state.bytes, state.total))
+        }
+        is MapFileState.Failed -> {
+            icon = if (state.reason == MapFailure.NO_SPACE) R.drawable.ic_sd_card_alert else R.drawable.ic_sync_problem
+            text = stringResource(mapFailureNote(state.reason))
+        }
         MapFileState.None, is MapFileState.Ready -> return
     }
-    Surface(
-        modifier = modifier,
-        shape = MaterialTheme.shapes.small,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-        shadowElevation = 2.dp,
-    ) {
-        Text(text, Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
+    Surface(shape = NoteShape, color = MaterialTheme.colorScheme.surfaceContainerLow, shadowElevation = 1.dp) {
+        Column(
+            modifier = Modifier.padding(start = 14.dp, end = 18.dp, top = 11.dp, bottom = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painter = painterResource(icon),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+                Text(text, style = MaterialTheme.typography.titleSmall)
+            }
+            if (state is MapFileState.Downloading) {
+                LinearProgressIndicator(
+                    progress = { downloadPercent(state.bytes, state.total) / 100f },
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                )
+            }
+        }
     }
 }
 
@@ -253,8 +314,7 @@ private class RouteMapController(
     private var coveredTop = 0
     private var coveredBottom = 0
 
-    /** MapLibre's own margin under the attribution button, before it is lifted clear of [coveredBottom]. */
-    private var attributionMarginBottom = 0
+
     private var style: Style? = null
     private var started = false
     private var resumed = false
@@ -304,7 +364,7 @@ private class RouteMapController(
                 isCompassEnabled = false
                 isLogoEnabled = false
             }
-            attributionMarginBottom = map.uiSettings.attributionMarginBottom
+            map.uiSettings.attributionGravity = Gravity.BOTTOM or Gravity.END
             placeAttribution(map)
             map.addOnCameraMoveStartedListener { reason ->
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) drags++
@@ -368,15 +428,12 @@ private class RouteMapController(
         }
     }
 
-    /** OpenStreetMap's credit stays where the driver can reach it, above whatever covers the bottom of the map. */
+    /**
+     * OpenStreetMap's credit stays where the driver can reach it: at the bottom right, opposite the
+     * map's own notes, and above whatever covers the bottom of the map.
+     */
     private fun placeAttribution(map: MapLibreMap) {
-        val ui = map.uiSettings
-        ui.setAttributionMargins(
-            ui.attributionMarginLeft,
-            ui.attributionMarginTop,
-            ui.attributionMarginRight,
-            attributionMarginBottom + coveredBottom,
-        )
+        map.uiSettings.setAttributionMargins(0, 0, dp(ATTRIBUTION_MARGIN_DP), coveredBottom + dp(ATTRIBUTION_MARGIN_DP))
     }
 
     /** Goes back to following the vehicle, at whatever zoom the driver left the map. */

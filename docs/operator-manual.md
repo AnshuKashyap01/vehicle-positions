@@ -324,9 +324,12 @@ takes about ten minutes. Before you start, make sure the driver has an account
    - If the phone's location services are switched off entirely, the app says
      **Turn On Location Services** and will not start until they are on.
 7. Tracking starts. A map of the trip fills the screen, with the status card
-   over its top and **Route …**, **Trip duration: …**, **Location updates
-   sent: …** and an **End Trip** button over its bottom. A notification, **OBA Tracker is active**, stays in the status
-   bar for the whole trip.
+   over its top and the trip bar along its bottom: the route and where the run
+   is headed, how long the trip has run and how many reports have been sent,
+   and an **End trip** button. Swipe the bar up, or tap it, to see the run, how
+   reporting is going, the street map, and the stops from the last one passed
+   to the end of the line. A notification, **OBA Tracker is active**, stays in
+   the status bar for the whole trip.
 
 **What the status card means.** The card at the top says how the trip is
 keeping to its schedule, judged against the next stop: green **On time**, blue
@@ -348,7 +351,7 @@ so this normally appears on a phone that has been running since the previous
 day. Tap **Sign in** on the card and sign in again with the same email and
 password; the trip carries on.
 
-**Ending a trip.** Tap **End Trip** and confirm **End this trip?** ("This will
+**Ending a trip.** Tap **End trip** and confirm **End this trip?** ("This will
 stop location tracking and mark the trip as complete."). Tracking stops, the
 notification disappears, and the vehicle drops out of the feed once its last
 report ages past the staleness threshold. If the server cannot be reached at
@@ -453,7 +456,7 @@ down. Ask your administrator for a key and check the feed with
 1. **Trips** → **Completed**: every run of the day should be there, with a
    sensible **Duration**.
 2. **Trips** → **Active**: should be empty. Every trip still listed as
-   **Active** is a driver who did not tap **End Trip**. Ask them to reopen the
+   **Active** is a driver who did not tap **End trip**. Ask them to reopen the
    app and end it; the app remembers the trip and will take them straight back
    to the tracking screen.
 3. **Dashboard**: **Active Trips** back to 0, **Active Now** back to 0 a few
@@ -539,7 +542,7 @@ points are.
 | Symptom | Likely cause | What to do |
 |---|---|---|
 | Driver sees **You are not assigned to this vehicle.** after tapping a run on **Select a Run** | The vehicle is not assigned to that driver, or the assignment was removed. | **Users** → **Edit** the driver → **Assigned vehicles** → pick the vehicle → **Assign**. Then have them tap the run again. |
-| Driver sees **You already have an active trip.** | An earlier trip was never ended, usually because it was started on another phone or the app was reinstalled. | Have the driver open the app on the phone that started the trip; it returns to the tracking screen for the old trip, where **End Trip** ends it. Confirm on **Trips** → **Active** that it is gone. If the app no longer knows about the trip, ask your IT contact — there is no button in the admin UI to end another person's trip. |
+| Driver sees **You already have an active trip.** | An earlier trip was never ended, usually because it was started on another phone or the app was reinstalled. | Have the driver open the app on the phone that started the trip; it returns to the tracking screen for the old trip, where **End trip** ends it. Confirm on **Trips** → **Active** that it is gone. If the app no longer knows about the trip, ask your IT contact: there is no button in the admin UI to end another person's trip. |
 | Driver sees **No vehicles are assigned to you.** | No active vehicle is assigned to that account. | Check the vehicle is not deactivated (**Vehicles** → **Show deactivated**), then assign it (section 6). |
 | One vehicle missing from the feed and the map, others fine | That phone has stopped reporting for longer than the staleness threshold: no signal, app closed, trip never started, phone battery dead, or Android killed the app in the background. | Ask the driver what the line under the status card says. **No connection** is a coverage problem and clears itself. If the app is not on the tracking screen at all, the trip was never started or was ended. If it keeps dying when the screen locks, the background-location permission is not **"Allow all the time"**: redo step 6 of section 7. |
 | Feed completely empty during service hours | Nothing is reporting, or the server lost its database. | Check **Dashboard**: if **Feed last updated** says **never** (nothing has reported for several minutes) and **Active Trips** is 0, it is the phones — start with two or three drivers. If **Active Trips** is healthy but nothing is in the feed, contact IT: see the monitoring checks in [`deployment.md` §9](deployment.md#9-monitoring). |

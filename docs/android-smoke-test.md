@@ -249,8 +249,8 @@ ids now come from the catalog, which is the point of Check 2.
 
 **Expected outcome:** the feed's `entity[].vehicle.position.latitude` /
 `.longitude` match the fix you injected (within GPS precision), and the
-`timestamp` advances on repeated calls as new fixes are sent. The app's
-"fixes sent" counter should also be climbing.
+`timestamp` advances on repeated calls as new fixes are sent. The sent count
+on the app's trip bar should also be climbing.
 
 The vehicle's entity must show **both** ids, and both must be the catalog's:
 
@@ -366,18 +366,17 @@ then start `T1` as in Check 1 (it is badged **Next** until `$ST1`).
   Tracking screen with a dark "No connection" line under the status card. The
   card still judges every fix, and the distance to ST3 keeps counting down: the
   shape and schedule are on the phone, not refetched. Once the server is back
-  the line goes away. (The "Location updates sent" counter starts again from 0
-  with the new process.)
+  the line goes away. (The sent count on the trip bar starts again from 0 with
+  the new process.)
 - **Relaunched without the stored geometry:** the card reads `No schedule`,
-  and the "Location updates sent" counter keeps climbing: reporting does not
-  depend on it.
+  and the sent count keeps climbing: reporting does not depend on it.
 - **Ending a trip:** `active_trip_geometry.json` is listed while the second
   trip runs, and gone once it has ended.
 
 ### Check 2c: The map draws the trip and follows the vehicle
 
 The Tracking screen draws the run on a map that fills the screen, under the
-system bars, the status card and the trip counters: spec §6.3 of the iOS
+system bars, the status card and the trip bar: spec §6.3 of the iOS
 design, with the iOS map's sizes. With
 `MAP_PMTILES_URL` unset, as in step 1, it draws on a plain background; Check 2d
 adds the street map. Run this with `T1` started and the drive loop from Check 2b
@@ -406,13 +405,14 @@ going.
   edge, with its three stops as small ringed circles.
 - **From the first fix:** the map closes in on the vehicle, a blue arrowhead
   that sits a third of the way up the part of the map between the status card
-  and the trip counters, with the route ahead above it, and
+  and the trip bar, with the route ahead above it, and
   moves with it between fixes without jumping. The next stop is drawn larger
   with its name beside it, and that moves on to ST3 once ST2 is passed.
 - **The detour:** the route fades, the arrowhead turns grey, and a dot marks
   where on the route the vehicle was matched. All three are undone once the
   fixes are back on the line.
-- **Dragging:** the map stops following and a **Re-center** button appears.
+- **Dragging:** the map stops following and a **Re-center** chip appears at
+  the bottom left, above the trip bar.
   Tapping it, or leaving the map alone for 10 seconds, takes it back to the
   vehicle.
 - **Reports:** the count grows by 6 or 7 in each minute, with the screen open
@@ -446,13 +446,15 @@ force-stop the app, open it again and resume the shift.
 
 **Expected outcome:**
 
-- **While it downloads:** "Downloading map" and a percentage at the top left of
-  the map, under the status card, over the plain background.
+- **While it downloads:** a "Downloading map" chip with a percentage and a
+  progress bar at the bottom left, above the trip bar, over the plain
+  background. Swiping the trip bar up shows `Downloading · N%` in the panel's
+  **Street map** row.
 - **Once it is done:** streets, road names and places appear under the route
   without the map jumping, and the vehicle stays a third of the way up. Street
   names are drawn over the route line; the stops, the next stop's name and the
-  vehicle are drawn over the street names. An ⓘ at the bottom left, just above
-  the trip counters, opens
+  vehicle are drawn over the street names. An ⓘ at the bottom right, just
+  above the trip bar, opens
   "© OpenStreetMap contributors".
 - **Offline:** after the restart in airplane mode the line under the status
   card says "No connection", and the streets are all still there.
@@ -539,12 +541,12 @@ grep -c '"path":"/api/v1/trips/start"' /tmp/vt-server.log
 ```
 
 **End Shift** on the same prompt is the other way out. It takes the same path as
-**End Trip** in Check 5, so Check 5 covers it: to run it from here instead,
+**End trip** in Check 5, so Check 5 covers it: to run it from here instead,
 force-stop and relaunch again and tap **End Shift**.
 
 ### Check 5 — Ending the trip stops everything and the vehicle drops from the feed
 
-1. Reopen the app (if not already open) and tap **End Trip**.
+1. Reopen the app (if not already open) and tap **End trip** on the trip bar.
 2. Confirm in the dialog ("End this trip? This will stop location tracking
    and mark the trip as complete.").
 

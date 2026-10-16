@@ -66,6 +66,8 @@ class ThemeContrastTest {
                 val text = theme.status[tone].text
                 assertContrast(4.5f, "${theme.name} $tone text on surface", text, theme.scheme.surface)
                 assertContrast(4.5f, "${theme.name} $tone text on surfaceContainer", text, theme.scheme.surfaceContainer)
+                // The trip panel's colour, where the vehicle's row says how it is keeping to the schedule.
+                assertContrast(4.5f, "${theme.name} $tone text on surfaceContainerLow", text, theme.scheme.surfaceContainerLow)
             }
         }
     }
