@@ -225,6 +225,15 @@ class ScreenFlowTest {
     }
 
     @Test
+    fun trackingScreen_countsTheTripTimeFromItsStart() {
+        val startedAt = System.currentTimeMillis() / 1000 - 65
+        showTracking(TrackingState(active = true, tripStartedAtEpochSec = startedAt, geometry = t1))
+
+        // 01:05, or a second or two more on a slow device.
+        compose.onNodeWithText(resources.getString(R.string.tracking_duration_label, "01:0"), substring = true).assertIsDisplayed()
+    }
+
+    @Test
     fun trackingScreen_showsTheNextStopInKilometresPastOneKilometre() {
         // Without ST2, the next stop from ST1 is ST3, 1001 m on.
         val twoStops = t1.copy(stops = listOf(t1.stops[0], t1.stops[2]))

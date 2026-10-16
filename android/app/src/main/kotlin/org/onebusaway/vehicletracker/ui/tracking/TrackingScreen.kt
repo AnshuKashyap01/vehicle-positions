@@ -76,17 +76,6 @@ fun TrackingScreenContent(
     map: @Composable (Modifier) -> Unit = { modifier -> Spacer(modifier) },
 ) {
     var showConfirmDialog by remember { mutableStateOf(false) }
-    var elapsedSeconds by remember { mutableLongStateOf(0L) }
-
-    val startedAt = state.tracking.tripStartedAtEpochSec ?: state.activeTrip?.startedAtEpochSec
-    LaunchedEffect(startedAt) {
-        if (startedAt != null) {
-            while (true) {
-                elapsedSeconds = (System.currentTimeMillis() / 1000) - startedAt
-                delay(1000)
-            }
-        }
-    }
 
     // The order of iOS's TrackingView: status, the map taking what height is left, footer.
     Column(modifier = Modifier.fillMaxSize()) {
@@ -107,10 +96,7 @@ fun TrackingScreenContent(
         Column(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            Text(
-                text = stringResource(R.string.tracking_duration_label, formatDuration(elapsedSeconds)),
-                style = MaterialTheme.typography.bodyLarge,
-            )
+            TripDuration(startedAtEpochSec = state.tracking.tripStartedAtEpochSec ?: state.activeTrip?.startedAtEpochSec)
             Spacer(Modifier.height(8.dp))
             Text(
                 text = stringResource(R.string.tracking_fixes_sent_label, state.tracking.fixesSent),
@@ -155,6 +141,27 @@ fun TrackingScreenContent(
     if (state.endTripError) {
         EndTripErrorDialog(onRetry = onEndTripClick, onEndLocally = onEndTripLocallyClick, onDismiss = onDismissError)
     }
+}
+
+/**
+ * How long the trip has run, ticking once a second. The tick lives here rather than in the screen, so each
+ * second recomposes this text alone and not the status card or the map.
+ */
+@Composable
+private fun TripDuration(startedAtEpochSec: Long?) {
+    var elapsedSeconds by remember { mutableLongStateOf(0L) }
+    LaunchedEffect(startedAtEpochSec) {
+        if (startedAtEpochSec != null) {
+            while (true) {
+                elapsedSeconds = (System.currentTimeMillis() / 1000) - startedAtEpochSec
+                delay(1000)
+            }
+        }
+    }
+    Text(
+        text = stringResource(R.string.tracking_duration_label, formatDuration(elapsedSeconds)),
+        style = MaterialTheme.typography.bodyLarge,
+    )
 }
 
 /** The server did not confirm the end. Shared with the resume prompt, which ends trips through [TripEnder] too. */
