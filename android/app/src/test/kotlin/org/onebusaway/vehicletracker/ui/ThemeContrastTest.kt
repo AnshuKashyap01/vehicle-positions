@@ -82,6 +82,26 @@ class ThemeContrastTest {
     @Test fun `a problem reads on its container`() {
         for (theme in themes) {
             assertContrast(4.5f, "${theme.name} problem content", theme.problems.content, theme.problems.container)
+            // An icon is a graphic, which WCAG holds to 3:1.
+            assertContrast(3f, "${theme.name} problem icon", theme.problems.icon, theme.problems.container)
+        }
+    }
+
+    @Test fun `a problem icon reads on the trip bar and in a dialog`() {
+        for (theme in themes) {
+            val icon = theme.problems.iconOnSurface
+            assertContrast(3f, "${theme.name} problem icon on surfaceContainerLow", icon, theme.scheme.surfaceContainerLow)
+            // AlertDialog's container colour.
+            assertContrast(3f, "${theme.name} problem icon on surfaceContainerHigh", icon, theme.scheme.surfaceContainerHigh)
+        }
+    }
+
+    @Test fun `the signed out card reads, and its button stands out`() {
+        for (theme in themes) {
+            val card = theme.problems.signedOut
+            assertContrast(4.5f, "${theme.name} signed out content", card.content, card.container)
+            assertContrast(4.5f, "${theme.name} signed out onAccent", card.onAccent, card.accent)
+            assertContrast(3f, "${theme.name} signed out accent on the card", card.accent, card.container)
         }
     }
 }
