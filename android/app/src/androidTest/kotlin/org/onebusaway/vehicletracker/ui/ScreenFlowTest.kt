@@ -1,6 +1,8 @@
 package org.onebusaway.vehicletracker.ui
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -16,8 +18,10 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.Density
@@ -294,6 +298,34 @@ class ScreenFlowTest {
         compose.onNodeWithText(getString(R.string.tracking_adherence_no_schedule)).assertIsDisplayed()
         compose.onNodeWithText(getString(R.string.tracking_adherence_no_schedule_riders)).assertIsDisplayed()
         compose.onNodeWithText(getString(R.string.tracking_adherence_no_schedule_detail)).assertIsDisplayed()
+    }
+
+    @Test
+    fun trackingScreen_tellsTheMapHowMuchTheCardAndFooterCover() {
+        var covered: PaddingValues? = null
+        compose.setContent {
+            TrackingScreenContent(
+                state = TrackingUiState(tracking = TrackingState(active = true, geometry = t1, adherence = judged(47.6045, -122.3300, at(8, 5)))),
+                onEndTripClick = {},
+                onEndTripLocallyClick = {},
+                onDismissError = {},
+                onReauthClick = {},
+                map = { modifier, contentPadding ->
+                    covered = contentPadding
+                    Spacer(modifier)
+                },
+            )
+        }
+        compose.waitForIdle()
+
+        val padding = requireNotNull(covered)
+        val screenBottom = compose.onRoot().getBoundsInRoot().bottom
+        // The uncovered map starts within the card's bottom padding, under its last line, and ends
+        // within the footer's top padding, over its first.
+        val cardLastLine = compose.onNodeWithText("8:10", substring = true).getBoundsInRoot().bottom
+        assertTrue(padding.calculateTopPadding() - cardLastLine in 0.dp..20.dp)
+        val footerFirstLine = compose.onNodeWithText(resources.getString(R.string.tracking_duration_label, "00:00")).getBoundsInRoot().top
+        assertTrue(footerFirstLine - (screenBottom - padding.calculateBottomPadding()) in 0.dp..20.dp)
     }
 
     @Test

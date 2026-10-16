@@ -18,6 +18,7 @@ import android.util.TypedValue
 import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.FilledTonalButton
@@ -36,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -132,11 +134,18 @@ fun Context.glEsVersion(): Int = getSystemService(ActivityManager::class.java).d
  * The trip on a map, as spec §6.3 has it: the shape in the route colour over a darker casing,
  * the stops with the next one enlarged and named, the vehicle pointed along its course, and the
  * matched position while it is off the route. The camera follows heading-up with the vehicle a
- * third of the way up. Under it is the agency's street map once the file is on the phone, and a
- * plain background until then, with a note while the first copy downloads.
+ * third of the way up the part of the map that [contentPadding], the screen's own cards and bars
+ * over it, leaves uncovered. Under it is the agency's street map once the file is on the phone,
+ * and a plain background until then, with a note while the first copy downloads.
  */
 @Composable
-fun RouteMap(geometry: TripGeometry, adherence: Adherence?, mapFile: MapFileState, modifier: Modifier = Modifier) {
+fun RouteMap(
+    geometry: TripGeometry,
+    adherence: Adherence?,
+    mapFile: MapFileState,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
     val dark = isSystemInDarkTheme()
     val labelColor = MaterialTheme.colorScheme.onSurface.toArgb()
@@ -152,6 +161,10 @@ fun RouteMap(geometry: TripGeometry, adherence: Adherence?, mapFile: MapFileStat
         onDispose { lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(geometry, adherence) { controller.show(geometry, adherence) }
+    val density = LocalDensity.current
+    val coveredTop = with(density) { contentPadding.calculateTopPadding().roundToPx() }
+    val coveredBottom = with(density) { contentPadding.calculateBottomPadding().roundToPx() }
+    LaunchedEffect(coveredTop, coveredBottom) { controller.cover(coveredTop, coveredBottom) }
     val streetFile = (mapFile as? MapFileState.Ready)?.file
     LaunchedEffect(streetFile) { controller.useStreets(streetFile) }
     // Restarted by every drag, so the map goes back only once the driver has left it alone.
@@ -168,11 +181,11 @@ fun RouteMap(geometry: TripGeometry, adherence: Adherence?, mapFile: MapFileStat
             modifier = Modifier.fillMaxSize(),
             onRelease = { controller.destroy() },
         )
-        MapFileNote(mapFile, Modifier.align(Alignment.TopStart).padding(8.dp))
+        MapFileNote(mapFile, Modifier.align(Alignment.TopStart).padding(contentPadding).padding(8.dp))
         if (!controller.following) {
             FilledTonalButton(
                 onClick = controller::follow,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(contentPadding).padding(12.dp),
             ) {
                 Text(stringResource(R.string.tracking_map_recenter))
             }
@@ -235,6 +248,13 @@ private class RouteMapController(
 
     private val density = context.resources.displayMetrics.density
     private var map: MapLibreMap? = null
+
+    /** Pixels at the map's top and bottom edges that the screen draws over, so the trip is kept out of them. */
+    private var coveredTop = 0
+    private var coveredBottom = 0
+
+    /** MapLibre's own margin under the attribution button, before it is lifted clear of [coveredBottom]. */
+    private var attributionMarginBottom = 0
     private var style: Style? = null
     private var started = false
     private var resumed = false
@@ -268,9 +288,8 @@ private class RouteMapController(
         // No saved state: the camera follows the vehicle, so there is nothing of its own to restore.
         mapView.onCreate(null)
         context.registerComponentCallbacks(lowMemory)
-        // The panel above the map grows and shrinks with its text, and the map with it. MapLibre
-        // drops the padding when the map changes size, which would let the vehicle drift back to
-        // the middle.
+        // MapLibre drops the padding when the map changes size, as on a turn of the phone or in
+        // split screen, which would let the vehicle drift back to the middle.
         mapView.addOnLayoutChangeListener { _, _, top, _, bottom, _, oldTop, _, oldBottom ->
             if (bottom - top != oldBottom - oldTop && following && state != null) applyFollowPadding()
         }
@@ -285,6 +304,8 @@ private class RouteMapController(
                 isCompassEnabled = false
                 isLogoEnabled = false
             }
+            attributionMarginBottom = map.uiSettings.attributionMarginBottom
+            placeAttribution(map)
             map.addOnCameraMoveStartedListener { reason ->
                 if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) drags++
             }
@@ -333,6 +354,31 @@ private class RouteMapController(
         render()
     }
 
+    /** Keeps the trip and the attribution out of [top] and [bottom] pixels of the map, which the screen covers. */
+    fun cover(top: Int, bottom: Int) {
+        if (top == coveredTop && bottom == coveredBottom) return
+        coveredTop = top
+        coveredBottom = bottom
+        val map = map ?: return
+        placeAttribution(map)
+        val geometry = drawnGeometry ?: return
+        when {
+            state == null -> fitRoute(map, geometry)
+            following -> applyFollowPadding()
+        }
+    }
+
+    /** OpenStreetMap's credit stays where the driver can reach it, above whatever covers the bottom of the map. */
+    private fun placeAttribution(map: MapLibreMap) {
+        val ui = map.uiSettings
+        ui.setAttributionMargins(
+            ui.attributionMarginLeft,
+            ui.attributionMarginTop,
+            ui.attributionMarginRight,
+            attributionMarginBottom + coveredBottom,
+        )
+    }
+
     /** Goes back to following the vehicle, at whatever zoom the driver left the map. */
     fun follow() {
         val map = map ?: return
@@ -342,8 +388,9 @@ private class RouteMapController(
 
     /**
      * Moves the camera to the vehicle and keeps it there, heading-up. The padding is what puts
-     * the vehicle a third of the way up the map (spec §6.3), with the road ahead above it. It is
-     * set once the camera has arrived, because MapLibre ignores it while the camera is on its way.
+     * the vehicle a third of the way up the uncovered map (spec §6.3), with the road ahead above
+     * it. It is set once the camera has arrived, because MapLibre ignores it while the camera is
+     * on its way.
      */
     private fun startFollowing(map: MapLibreMap, zoom: Double?) {
         val component = map.locationComponent
@@ -365,8 +412,10 @@ private class RouteMapController(
     private fun applyFollowPadding(animationMs: Long = FOLLOW_ANIMATION_MS) {
         val map = map ?: return
         if (destroyed) return
-        map.locationComponent.paddingWhileTracking(doubleArrayOf(0.0, mapView.height / 3.0, 0.0, 0.0), animationMs)
+        map.locationComponent.paddingWhileTracking(followPadding(mapView.height, coveredTop, coveredBottom), animationMs)
     }
+
+    private fun uncoveredHeight(): Int = (mapView.height - coveredTop - coveredBottom).coerceAtLeast(0)
 
     fun onLifecycleEvent(event: Lifecycle.Event) {
         if (destroyed) return
@@ -521,15 +570,16 @@ private class RouteMapController(
 
         // The whole route until the first fix arrives. Posted, because the view may not have
         // been measured yet and the fit needs its size.
+        mapView.post { if (!destroyed && state == null) fitRoute(map, geometry) }
+    }
+
+    /** The whole route in the uncovered map, until the first fix takes the camera to the vehicle. */
+    private fun fitRoute(map: MapLibreMap, geometry: TripGeometry) {
         val points = geometry.shapePoints
-        if (points.size >= 2) {
-            val bounds = LatLngBounds.Builder().includes(points.map { LatLng(it.lat, it.lon) }).build()
-            mapView.post {
-                if (!destroyed && state == null) {
-                    map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, dp(FIT_PADDING_DP.toFloat())))
-                }
-            }
-        }
+        if (points.size < 2) return
+        val bounds = LatLngBounds.Builder().includes(points.map { LatLng(it.lat, it.lon) }).build()
+        val fit = dp(FIT_PADDING_DP.toFloat())
+        map.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, fit, coveredTop + fit, fit, coveredBottom + fit))
     }
 
     private fun drawFix(map: MapLibreMap, style: Style, geometry: TripGeometry, previous: RouteMapState?, next: RouteMapState) {
@@ -552,7 +602,7 @@ private class RouteMapController(
 
         if (previous == null) {
             // The first fix: leave the whole-route view for the vehicle.
-            val aheadDp = mapView.height / density * 2 / 3
+            val aheadDp = uncoveredHeight() / density * 2 / 3
             startFollowing(map, followZoom(next.vehicle.lat, aheadDp.toDouble()))
         }
     }

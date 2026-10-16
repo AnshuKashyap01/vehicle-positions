@@ -376,8 +376,9 @@ then start `T1` as in Check 1 (it is badged **Next** until `$ST1`).
 
 ### Check 2c: The map draws the trip and follows the vehicle
 
-The Tracking screen draws the run on a map between the status card and the
-trip counters: spec §6.3 of the iOS design, with the iOS map's sizes. With
+The Tracking screen draws the run on a map that fills the screen, under the
+system bars, the status card and the trip counters: spec §6.3 of the iOS
+design, with the iOS map's sizes. With
 `MAP_PMTILES_URL` unset, as in step 1, it draws on a plain background; Check 2d
 adds the street map. Run this with `T1` started and the drive loop from Check 2b
 going.
@@ -404,7 +405,8 @@ going.
 - **Before the first fix:** the whole route, in the route's colour over a darker
   edge, with its three stops as small ringed circles.
 - **From the first fix:** the map closes in on the vehicle, a blue arrowhead
-  that sits a third of the way up the map with the route ahead above it, and
+  that sits a third of the way up the part of the map between the status card
+  and the trip counters, with the route ahead above it, and
   moves with it between fixes without jumping. The next stop is drawn larger
   with its name beside it, and that moves on to ST3 once ST2 is passed.
 - **The detour:** the route fades, the arrowhead turns grey, and a dot marks
@@ -445,11 +447,12 @@ force-stop the app, open it again and resume the shift.
 **Expected outcome:**
 
 - **While it downloads:** "Downloading map" and a percentage at the top left of
-  the map, over the plain background.
+  the map, under the status card, over the plain background.
 - **Once it is done:** streets, road names and places appear under the route
   without the map jumping, and the vehicle stays a third of the way up. Street
   names are drawn over the route line; the stops, the next stop's name and the
-  vehicle are drawn over the street names. An ⓘ at the bottom left opens
+  vehicle are drawn over the street names. An ⓘ at the bottom left, just above
+  the trip counters, opens
   "© OpenStreetMap contributors".
 - **Offline:** after the restart in airplane mode the line under the status
   card says "No connection", and the streets are all still there.

@@ -1,27 +1,39 @@
 package org.onebusaway.vehicletracker.ui.tracking
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -32,6 +44,9 @@ import org.onebusaway.vehicletracker.R
 import org.onebusaway.vehicletracker.ui.map.RouteMap
 import org.onebusaway.vehicletracker.ui.map.glEsVersion
 import org.onebusaway.vehicletracker.ui.map.supportsMap
+
+/** The gap between the screen's edges and the status card floating over the map. */
+private val CardMargin = 12.dp
 
 @Composable
 fun TrackingScreen(
@@ -52,11 +67,11 @@ fun TrackingScreen(
         onEndTripLocallyClick = { viewModel.onEndTripLocally(onTripEnded) },
         onDismissError = viewModel::dismissEndTripError,
         onReauthClick = onReauthRequired,
-        map = { modifier ->
+        map = { modifier, contentPadding ->
             // With no geometry there is no route to draw, and the status card already says so.
             val geometry = state.tracking.geometry
             if (mapSupported && geometry != null) {
-                RouteMap(geometry, state.tracking.adherence, state.mapFile, modifier)
+                RouteMap(geometry, state.tracking.adherence, state.mapFile, contentPadding, modifier)
             } else {
                 Spacer(modifier)
             }
@@ -72,47 +87,66 @@ fun TrackingScreenContent(
     onDismissError: () -> Unit,
     onReauthClick: () -> Unit,
     // The map is handed in so that this screen can be shown, in tests and previews, with no
-    // OpenGL behind it. It is given the space between the status card and the footer.
-    map: @Composable (Modifier) -> Unit = { modifier -> Spacer(modifier) },
+    // OpenGL behind it. It fills the screen, and its padding says how much of it the status card
+    // and the footer cover.
+    map: @Composable (Modifier, PaddingValues) -> Unit = { modifier, _ -> Spacer(modifier) },
 ) {
     var showConfirmDialog by remember { mutableStateOf(false) }
+    var cardHeight by remember { mutableIntStateOf(0) }
+    var footerHeight by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val statusInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)
+    val mapPadding = with(density) {
+        PaddingValues(top = statusInsets.getTop(density).toDp() + CardMargin + cardHeight.toDp(), bottom = footerHeight.toDp())
+    }
 
-    // The order of iOS's TrackingView: status, the map taking what height is left, footer.
-    Column(modifier = Modifier.fillMaxSize()) {
+    // Unlike the other screens, Tracking draws under the system bars: the map fills the whole
+    // screen, and the status card and the footer float over it, each clear of its bar.
+    Box(modifier = Modifier.fillMaxSize()) {
+        map(Modifier.fillMaxSize(), mapPadding)
         StatusArea(
             model = statusCardModel(state.tracking, state.activeTrip?.vehicleId),
             problem = state.tracking.problem,
             onSignIn = onReauthClick,
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            modifier = Modifier.fillMaxWidth().windowInsetsPadding(statusInsets).padding(CardMargin),
+            onCardHeightChanged = { cardHeight = it },
         )
-        state.activeTrip?.let { trip ->
-            Text(
-                text = stringResource(R.string.tracking_route_label, trip.routeId),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
-            )
-        }
-        map(Modifier.weight(1f).fillMaxWidth())
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        Surface(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .onSizeChanged { footerHeight = it.height },
         ) {
-            TripDuration(startedAtEpochSec = state.tracking.tripStartedAtEpochSec ?: state.activeTrip?.startedAtEpochSec)
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(R.string.tracking_fixes_sent_label, state.tracking.fixesSent),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = { showConfirmDialog = true },
-                enabled = !state.ending,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.onSurface,
-                    contentColor = MaterialTheme.colorScheme.surface,
-                ),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+            Column(
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom + WindowInsetsSides.Horizontal))
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
-                Text(stringResource(R.string.tracking_end_trip_button))
+                state.activeTrip?.let { trip ->
+                    Text(
+                        text = stringResource(R.string.tracking_route_label, trip.routeId),
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+                TripDuration(startedAtEpochSec = state.tracking.tripStartedAtEpochSec ?: state.activeTrip?.startedAtEpochSec)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = stringResource(R.string.tracking_fixes_sent_label, state.tracking.fixesSent),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { showConfirmDialog = true },
+                    enabled = !state.ending,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.onSurface,
+                        contentColor = MaterialTheme.colorScheme.surface,
+                    ),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
+                ) {
+                    Text(stringResource(R.string.tracking_end_trip_button))
+                }
             }
         }
     }

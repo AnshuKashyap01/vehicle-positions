@@ -36,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -66,18 +68,32 @@ private val JoinedCardShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.d
 private val ProblemLineShape = RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp, bottomStart = 24.dp, bottomEnd = 24.dp)
 private val DiscSize = 52.dp
 private const val DISC_ALPHA = 0.16f
+private val Elevation = 1.dp
 
 /**
  * The top of the Tracking screen: the status card, with a problem line joined under it while reports are not
  * getting through, or the Signed out card in their place once they have stopped. Every line is one line, so the
  * card is the same height in every state and nothing under it moves when the status changes.
+ *
+ * [onCardHeightChanged] hands back the status card's own height, without the problem line, for the map to keep
+ * the vehicle clear of: a line that comes and goes with the signal should not move the map each time.
  */
 @Composable
-internal fun StatusArea(model: StatusCardModel, problem: TrackingProblem, onSignIn: () -> Unit, modifier: Modifier = Modifier) {
+internal fun StatusArea(
+    model: StatusCardModel,
+    problem: TrackingProblem,
+    onSignIn: () -> Unit,
+    modifier: Modifier = Modifier,
+    onCardHeightChanged: (Int) -> Unit = {},
+) {
+    // Unclipped, so the cards' shadows show over the map.
     AnimatedContent(
         targetState = problem == TrackingProblem.AUTH_EXPIRED,
         modifier = modifier,
-        transitionSpec = { fadeIn(AppMotion.defaultEffectsSpec()) togetherWith fadeOut(AppMotion.defaultEffectsSpec()) },
+        transitionSpec = {
+            (fadeIn(AppMotion.defaultEffectsSpec()) togetherWith fadeOut(AppMotion.defaultEffectsSpec()))
+                .using(SizeTransform(clip = false))
+        },
         label = "signed out",
     ) { signedOut ->
         if (signedOut) {
@@ -85,12 +101,12 @@ internal fun StatusArea(model: StatusCardModel, problem: TrackingProblem, onSign
         } else {
             val line = problemLine(problem)
             Column {
-                StatusCard(model, joined = line != null)
+                StatusCard(model, joined = line != null, Modifier.onSizeChanged { onCardHeightChanged(it.height) })
                 AnimatedContent(
                     targetState = line,
                     transitionSpec = {
                         (fadeIn(AppMotion.defaultEffectsSpec()) togetherWith fadeOut(AppMotion.defaultEffectsSpec()))
-                            .using(SizeTransform(clip = true) { _, _ -> AppMotion.defaultSpatialSpec() })
+                            .using(SizeTransform(clip = false) { _, _ -> AppMotion.defaultSpatialSpec() })
                     },
                     label = "problem line",
                 ) { shown ->
@@ -102,15 +118,17 @@ internal fun StatusArea(model: StatusCardModel, problem: TrackingProblem, onSign
 }
 
 @Composable
-private fun StatusCard(model: StatusCardModel, joined: Boolean) {
+private fun StatusCard(model: StatusCardModel, joined: Boolean, modifier: Modifier = Modifier) {
     val colors = AppTheme.statusColors[model.tone]
     // Drawn rather than set as a background, so a change of tone animates in the draw phase alone.
     val fill by animateColorAsState(colors.fill, AppMotion.defaultEffectsSpec(), label = "status fill")
+    val shape = if (joined) JoinedCardShape else CardShape
     CompositionLocalProvider(LocalContentColor provides colors.onFill) {
         Row(
-            modifier = Modifier
+            modifier = modifier
                 .fillMaxWidth()
-                .clip(if (joined) JoinedCardShape else CardShape)
+                .shadow(Elevation, shape)
+                .clip(shape)
                 .drawBehind { drawRect(fill) }
                 .padding(start = 16.dp, top = 16.dp, end = 20.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -267,6 +285,7 @@ private fun ProblemLine(line: ProblemLineText, modifier: Modifier = Modifier) {
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 52.dp)
+            .shadow(Elevation, ProblemLineShape)
             .background(colors.container, ProblemLineShape)
             .padding(horizontal = 18.dp)
             .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
@@ -305,6 +324,7 @@ private fun SignedOutCard(onSignIn: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .shadow(Elevation, CardShape)
             .background(colors.container, CardShape)
             .padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),

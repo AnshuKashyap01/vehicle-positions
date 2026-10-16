@@ -323,9 +323,9 @@ takes about ten minutes. Before you start, make sure the driver has an account
      and allow it. This is what keeps long trips reporting reliably.
    - If the phone's location services are switched off entirely, the app says
      **Turn On Location Services** and will not start until they are on.
-7. Tracking starts. The screen shows the status card, plus **Route …**,
-   **Trip duration: …** and **Location updates sent: …**, and an **End Trip**
-   button. A notification, **OBA Tracker is active**, stays in the status
+7. Tracking starts. A map of the trip fills the screen, with the status card
+   over its top and **Route …**, **Trip duration: …**, **Location updates
+   sent: …** and an **End Trip** button over its bottom. A notification, **OBA Tracker is active**, stays in the status
    bar for the whole trip.
 
 **What the status card means.** The card at the top says how the trip is
