@@ -54,11 +54,47 @@ class TripStateStoreTest {
 
     @Test fun `a saved trip reads back unchanged`() = runTest {
         val store = DataStoreTripStateStore(newDataStore(), nairobi)
-        val trip = ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L)
+        val trip = ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L, driverId = "1")
 
         store.saveActiveTrip(trip)
 
         assertEquals(trip, store.activeTrip.first())
+    }
+
+    @Test fun `a trip saved before drivers were recorded reads back with no driver`() = runTest {
+        val dataStore = newDataStore()
+        // A trip in progress when the phone is updated: every key but trip_driver_id.
+        dataStore.edit { prefs ->
+            prefs[longPreferencesKey("trip_db_id")] = 7L
+            prefs[stringPreferencesKey("trip_gtfs_trip_id")] = "trip-0830"
+            prefs[stringPreferencesKey("trip_vehicle_id")] = "bus-1"
+            prefs[stringPreferencesKey("trip_route_id")] = "5"
+            prefs[stringPreferencesKey("trip_start_date")] = "20260804"
+            prefs[longPreferencesKey("trip_started_at")] = 100L
+        }
+
+        val trip = DataStoreTripStateStore(dataStore, nairobi).activeTrip.first()
+
+        assertEquals(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L, driverId = null), trip)
+    }
+
+    @Test fun `a trip saved with no driver does not keep an earlier trip's driver`() = runTest {
+        val store = DataStoreTripStateStore(newDataStore(), nairobi)
+        store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L, driverId = "1"))
+
+        store.saveActiveTrip(ActiveTrip(8L, "trip-0900", "bus-1", "5", "20260804", 200L, driverId = null))
+
+        assertNull(store.activeTrip.first()!!.driverId)
+    }
+
+    @Test fun `clearing a trip removes its driver too`() = runTest {
+        val dataStore = newDataStore()
+        val store = DataStoreTripStateStore(dataStore, nairobi)
+        store.saveActiveTrip(ActiveTrip(7L, "trip-0830", "bus-1", "5", "20260804", 100L, driverId = "1"))
+
+        store.clearActiveTrip()
+
+        assertFalse(dataStore.data.first().contains(stringPreferencesKey("trip_driver_id")))
     }
 
     @Test fun `a legacy trip keeps the GTFS trip id the driver entered`() = runTest {

@@ -35,8 +35,9 @@ class TripRepository @Inject constructor(
         gtfsTripId: String,
         serviceDate: String,
     ): Result<ActiveTrip> {
-        endUnconfirmedTrip().onFailure { return Result.failure(it) }
-        return startTrip(vehicleId, routeId, gtfsTripId, serviceDate)
+        val driverId = sessionStore.session.first().driverId
+        endUnconfirmedTrip(driverId).onFailure { return Result.failure(it) }
+        return startTrip(vehicleId, routeId, gtfsTripId, serviceDate, driverId)
     }
 
     private suspend fun startTrip(
@@ -44,6 +45,7 @@ class TripRepository @Inject constructor(
         routeId: String,
         gtfsTripId: String,
         serviceDate: String,
+        driverId: String?,
     ): Result<ActiveTrip> = try {
         val cleanedTripId = gtfsTripId.trim()
         val cleanedRouteId = routeId.trim()
@@ -56,6 +58,7 @@ class TripRepository @Inject constructor(
             routeId = cleanedRouteId,
             startDate = serviceDate,
             startedAtEpochSec = startedAt,
+            driverId = driverId,
         )
         tripStateStore.saveActiveTrip(activeTrip)
         recordLocally("recent route") { tripStateStore.addRecentRoute(cleanedRouteId) }
@@ -86,9 +89,9 @@ class TripRepository @Inject constructor(
      * is stuck. Another driver's end is left for them ([UnconfirmedEnd.belongsTo]): their open
      * trip does not block this driver's start.
      */
-    private suspend fun endUnconfirmedTrip(): Result<Unit> = try {
+    private suspend fun endUnconfirmedTrip(signedInDriverId: String?): Result<Unit> = try {
         val pending = tripStateStore.unconfirmedEnd.first()
-        if (pending != null && pending.belongsTo(sessionStore.session.first().driverId)) {
+        if (pending != null && pending.belongsTo(signedInDriverId)) {
             sendEnd(pending.tripDbId)
             tripStateStore.clearUnconfirmedEnd()
         }

@@ -158,6 +158,18 @@ class RepositoriesTest {
     private val startedTrip9 =
         """{"id":9,"user_id":1,"vehicle_id":"bus-1","route_id":"5","gtfs_trip_id":"","start_time":"2026-08-04T08:30:00Z","status":"active"}"""
 
+    @Test fun `trip start records the signed-in driver on the trip`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setResponseCode(201).setBody(startedTrip9))
+        val store = FakeTripStateStore()
+        val repo = TripRepository(TrackerApiProvider { apiFor(server) }, store, FakeVehiclePrefsStore(), signedInAs("2"), clock = { 500L })
+
+        assertTrue(repo.start("bus-1", "5", "", "20260804").isSuccess)
+
+        assertEquals("2", store.activeTrip.first()?.driverId)
+        server.shutdown()
+    }
+
     @Test fun `trip start first ends the trip that was ended on this phone only`() = runTest {
         val server = MockWebServer().apply { start() }
         server.enqueue(MockResponse().setBody("""{"status":"trip ended"}"""))

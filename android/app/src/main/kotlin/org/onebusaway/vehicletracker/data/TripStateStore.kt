@@ -21,6 +21,8 @@ data class ActiveTrip(
     /** Service date, YYYYMMDD, fixed when the trip started. */
     val startDate: String,
     val startedAtEpochSec: Long,
+    /** The driver who started the trip ([Session.driverId]); null for a trip saved before drivers were recorded. */
+    val driverId: String? = null,
 )
 
 /**
@@ -79,6 +81,7 @@ class DataStoreTripStateStore(
         val TRIP_ROUTE_ID = stringPreferencesKey("trip_route_id")
         val TRIP_START_DATE = stringPreferencesKey("trip_start_date")
         val TRIP_STARTED_AT = longPreferencesKey("trip_started_at")
+        val TRIP_DRIVER_ID = stringPreferencesKey("trip_driver_id")
         val UNCONFIRMED_END_TRIP_DB_ID = longPreferencesKey("unconfirmed_end_trip_db_id")
         val UNCONFIRMED_END_DRIVER_ID = stringPreferencesKey("unconfirmed_end_driver_id")
         val RECENT_ROUTES = stringPreferencesKey("recent_routes")
@@ -104,6 +107,7 @@ class DataStoreTripStateStore(
                 routeId = routeId.trim(),
                 startDate = prefs[Keys.TRIP_START_DATE] ?: serviceDate(startedAt, zone),
                 startedAtEpochSec = startedAt,
+                driverId = prefs[Keys.TRIP_DRIVER_ID],
             )
         } else {
             null
@@ -126,6 +130,11 @@ class DataStoreTripStateStore(
             prefs[Keys.TRIP_ROUTE_ID] = trip.routeId
             prefs[Keys.TRIP_START_DATE] = trip.startDate
             prefs[Keys.TRIP_STARTED_AT] = trip.startedAtEpochSec
+            if (trip.driverId != null) {
+                prefs[Keys.TRIP_DRIVER_ID] = trip.driverId
+            } else {
+                prefs.remove(Keys.TRIP_DRIVER_ID)
+            }
         }
     }
 
@@ -161,6 +170,7 @@ class DataStoreTripStateStore(
         remove(Keys.TRIP_ROUTE_ID)
         remove(Keys.TRIP_START_DATE)
         remove(Keys.TRIP_STARTED_AT)
+        remove(Keys.TRIP_DRIVER_ID)
         remove(Keys.LEGACY_LOCATION_TRIP_ID)
     }
 
