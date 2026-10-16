@@ -1,17 +1,12 @@
 package org.onebusaway.vehicletracker.ui.tracking
 
-import androidx.annotation.StringRes
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -25,23 +20,18 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import org.onebusaway.vehicletracker.R
-import org.onebusaway.vehicletracker.data.TrackingProblem
-import org.onebusaway.vehicletracker.data.TrackingState
 import org.onebusaway.vehicletracker.ui.map.RouteMap
 import org.onebusaway.vehicletracker.ui.map.glEsVersion
 import org.onebusaway.vehicletracker.ui.map.supportsMap
-import org.onebusaway.vehicletracker.ui.theme.AppTheme
 
 @Composable
 fun TrackingScreen(
@@ -63,7 +53,7 @@ fun TrackingScreen(
         onDismissError = viewModel::dismissEndTripError,
         onReauthClick = onReauthRequired,
         map = { modifier ->
-            // With no geometry there is no route to draw, and the panel already says so.
+            // With no geometry there is no route to draw, and the status card already says so.
             val geometry = state.tracking.geometry
             if (mapSupported && geometry != null) {
                 RouteMap(geometry, state.tracking.adherence, state.mapFile, modifier)
@@ -82,7 +72,7 @@ fun TrackingScreenContent(
     onDismissError: () -> Unit,
     onReauthClick: () -> Unit,
     // The map is handed in so that this screen can be shown, in tests and previews, with no
-    // OpenGL behind it. It is given the space between the panel and the footer.
+    // OpenGL behind it. It is given the space between the status card and the footer.
     map: @Composable (Modifier) -> Unit = { modifier -> Spacer(modifier) },
 ) {
     var showConfirmDialog by remember { mutableStateOf(false) }
@@ -98,36 +88,20 @@ fun TrackingScreenContent(
         }
     }
 
-    // The order of iOS's TrackingView: banner, panel, the map taking what height is left, footer.
+    // The order of iOS's TrackingView: status, the map taking what height is left, footer.
     Column(modifier = Modifier.fillMaxSize()) {
-        StatusBanner(
+        StatusArea(
+            model = statusCardModel(state.tracking, state.activeTrip?.vehicleId),
             problem = state.tracking.problem,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+            onSignIn = onReauthClick,
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
         )
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-        ) {
-            if (state.tracking.problem == TrackingProblem.AUTH_EXPIRED) {
-                Button(
-                    onClick = onReauthClick,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.onSurface,
-                        contentColor = MaterialTheme.colorScheme.surface,
-                    ),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
-                ) {
-                    Text(stringResource(R.string.tracking_reauth_button))
-                }
-                Spacer(Modifier.height(16.dp))
-            }
-            AdherencePanel(state.tracking)
-            state.activeTrip?.let { trip ->
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.tracking_route_label, trip.routeId),
-                    style = MaterialTheme.typography.titleLarge,
-                )
-            }
+        state.activeTrip?.let { trip ->
+            Text(
+                text = stringResource(R.string.tracking_route_label, trip.routeId),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+            )
         }
         map(Modifier.weight(1f).fillMaxWidth())
         Column(
@@ -200,82 +174,5 @@ internal fun EndTripErrorDialog(onRetry: () -> Unit, onEndLocally: () -> Unit, o
                 Text(stringResource(R.string.tracking_end_trip_error_end_locally))
             }
         },
-    )
-}
-
-@Composable
-private fun StatusBanner(problem: TrackingProblem, modifier: Modifier = Modifier) {
-    val textRes = when (problem) {
-        TrackingProblem.NO_NETWORK -> R.string.tracking_status_no_network
-        TrackingProblem.NO_GPS -> R.string.tracking_status_no_gps
-        TrackingProblem.CLOCK_SKEW -> R.string.tracking_status_clock_skew
-        TrackingProblem.AUTH_EXPIRED -> R.string.tracking_status_auth_expired
-        TrackingProblem.NONE -> R.string.tracking_status_connected
-    }
-    val (backgroundColor, textColor) = if (problem == TrackingProblem.NONE) {
-        AppTheme.statusColors.onTime.let { it.fill to it.onFill }
-    } else {
-        AppTheme.problemColors.let { it.container to it.content }
-    }
-    Box(
-        modifier = modifier.background(backgroundColor),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = stringResource(textRes),
-            color = textColor,
-            style = MaterialTheme.typography.titleLarge,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
-    }
-}
-
-/**
- * How the driver is keeping to the route and the schedule, as of the latest fix: a port of
- * `TrackingView.adherencePanel`.
- */
-@Composable
-private fun AdherencePanel(tracking: TrackingState) {
-    val adherence = tracking.adherence
-    val geometry = tracking.geometry
-    when {
-        adherence != null && geometry != null -> Column {
-            Text(
-                text = adherenceLabel(adherence),
-                color = AppTheme.statusColors[adherenceTone(adherence)].text,
-                style = MaterialTheme.typography.displaySmall,
-            )
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.tracking_adherence_next_stop, adherence.nextStop.name),
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(
-                        R.string.tracking_adherence_next_stop_detail,
-                        formatClock(adherence.nextStop.arrivalAt, geometry.timezone),
-                        distanceText(adherence.distanceToNextStopM),
-                    ),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-            }
-        }
-        // Reporting goes on without it: the trip was started by a build before this one, or the
-        // phone could not keep its geometry.
-        tracking.active && geometry == null -> PanelMessage(R.string.tracking_adherence_no_schedule)
-        else -> PanelMessage(R.string.tracking_adherence_waiting_for_gps)
-    }
-}
-
-@Composable
-private fun PanelMessage(@StringRes textRes: Int) {
-    Text(
-        text = stringResource(textRes),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        style = MaterialTheme.typography.displaySmall,
     )
 }

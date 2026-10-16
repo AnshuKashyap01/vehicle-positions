@@ -323,21 +323,30 @@ takes about ten minutes. Before you start, make sure the driver has an account
      and allow it. This is what keeps long trips reporting reliably.
    - If the phone's location services are switched off entirely, the app says
      **Turn On Location Services** and will not start until they are on.
-7. Tracking starts. The screen fills with a large status banner, plus **Route
-   …**, **Trip duration: …** and **Location updates sent: …**, and an **End
-   Trip** button. A notification, **OBA Tracker is active**, stays in the status
+7. Tracking starts. The screen shows the status card, plus **Route …**,
+   **Trip duration: …** and **Location updates sent: …**, and an **End Trip**
+   button. A notification, **OBA Tracker is active**, stays in the status
    bar for the whole trip.
 
-**What the status banner means.** The banner is green when all is well and red
-when something needs attention:
+**What the status card means.** The card at the top says how the trip is
+keeping to its schedule, judged against the next stop: green **On time**, blue
+**N min late**, red **N min early**, and grey while the bus is off the route, has
+no position yet, or has no timetable on the phone. **Off schedule · Is this the
+right run?** under the answer means the bus is so far from this run's timetable
+that the driver has probably picked the wrong run. When reports are not getting
+through, a dark line with an amber icon joins the bottom of the card:
 
-| Banner | Colour | What is happening | What the driver should do |
-|---|---|---|---|
-| **Tracking – Connected** | green | Fixes are reaching the server. | Nothing. |
-| **No connection** | red | The phone cannot reach the server. Positions taken now are dropped, not queued. | Keep driving; it goes green again by itself when signal returns. |
-| **GPS unavailable** | red | The phone is not producing location fixes. | Check that location services are still on and the phone has a view of the sky. |
-| **Check device clock** | red | The server has rejected several reports because the phone's clock is wrong. | Turn on automatic date and time in Android settings. |
-| **Session expired – log in again** | red | The phone's sign-in has expired. Sign-ins last 24 hours, so this normally appears on a phone that has been running since the previous day. | Tap **Log in** on the same screen and sign in again with the same email and password. |
+| Line under the card | What is happening | What the driver should do |
+|---|---|---|
+| **No connection** · Riders can't see you | The phone cannot reach the server. Positions taken now are dropped, not queued. | Keep driving; the line goes away by itself when signal returns. |
+| **No GPS signal** · Position paused | The phone is not producing location fixes. | Check that location services are still on and the phone has a view of the sky. |
+| **Phone clock is wrong** · Set automatic time | The server has rejected several reports because the phone's clock is wrong. | Turn on automatic date and time in Android settings. |
+
+When the phone's sign-in expires, a **Signed out** card takes the status card's
+place: "Reports have stopped. Your trip is still open." Sign-ins last 24 hours,
+so this normally appears on a phone that has been running since the previous
+day. Tap **Sign in** on the card and sign in again with the same email and
+password; the trip carries on.
 
 **Ending a trip.** Tap **End Trip** and confirm **End this trip?** ("This will
 stop location tracking and mark the trip as complete."). Tracking stops, the
@@ -350,7 +359,8 @@ app sends the end just before that start, so the trip's end time shows when the
 next one began, not when the run finished.
 
 Teach every driver the same three habits: start the trip before pulling out,
-check the banner is green, and end the trip when the run finishes.
+check there is no dark line under the status card, and end the trip when the
+run finishes.
 
 ---
 
@@ -531,12 +541,12 @@ points are.
 | Driver sees **You are not assigned to this vehicle.** after tapping a run on **Select a Run** | The vehicle is not assigned to that driver, or the assignment was removed. | **Users** → **Edit** the driver → **Assigned vehicles** → pick the vehicle → **Assign**. Then have them tap the run again. |
 | Driver sees **You already have an active trip.** | An earlier trip was never ended, usually because it was started on another phone or the app was reinstalled. | Have the driver open the app on the phone that started the trip; it returns to the tracking screen for the old trip, where **End Trip** ends it. Confirm on **Trips** → **Active** that it is gone. If the app no longer knows about the trip, ask your IT contact — there is no button in the admin UI to end another person's trip. |
 | Driver sees **No vehicles are assigned to you.** | No active vehicle is assigned to that account. | Check the vehicle is not deactivated (**Vehicles** → **Show deactivated**), then assign it (section 6). |
-| One vehicle missing from the feed and the map, others fine | That phone has stopped reporting for longer than the staleness threshold: no signal, app closed, trip never started, phone battery dead, or Android killed the app in the background. | Ask the driver what the status banner says. **No connection** is a coverage problem and clears itself. If the app is not on the tracking screen at all, the trip was never started or was ended. If it keeps dying when the screen locks, the background-location permission is not **"Allow all the time"** — redo step 6 of section 7. |
+| One vehicle missing from the feed and the map, others fine | That phone has stopped reporting for longer than the staleness threshold: no signal, app closed, trip never started, phone battery dead, or Android killed the app in the background. | Ask the driver what the line under the status card says. **No connection** is a coverage problem and clears itself. If the app is not on the tracking screen at all, the trip was never started or was ended. If it keeps dying when the screen locks, the background-location permission is not **"Allow all the time"**: redo step 6 of section 7. |
 | Feed completely empty during service hours | Nothing is reporting, or the server lost its database. | Check **Dashboard**: if **Feed last updated** says **never** (nothing has reported for several minutes) and **Active Trips** is 0, it is the phones — start with two or three drivers. If **Active Trips** is healthy but nothing is in the feed, contact IT: see the monitoring checks in [`deployment.md` §9](deployment.md#9-monitoring). |
-| Driver phone shows **Session expired – log in again** | The 24-hour sign-in expired. | Have the driver tap **Log in** on that screen and sign in again. If you have since deactivated the account, sign-in is refused — which is the intended outcome. |
+| Driver phone shows **Signed out** | The 24-hour sign-in expired. | Have the driver tap **Sign in** on that card and sign in again. If you have since deactivated the account, sign-in is refused, which is the intended outcome. |
 | A driver or admin cannot sign in and insists the password is right | The account is deactivated. Deactivation is deliberately indistinguishable from a wrong password on the sign-in screen. | **Users** → find the row → if **Status** reads **Deactivated**, click **Activate** and confirm **Reactivate this user?** |
 | Someone you deactivated is still reporting, or their phone still works | Deactivation blocks new sign-ins; it does not end a session already in progress, and that session can last up to 24 hours. | Confirm the row shows **Deactivated** on **Users** — that is enough to stop them signing in again. If they must be cut off this minute, tell your IT contact; only a server-side change ends live sessions. |
-| Driver phone shows **Check device clock** | The phone's clock is wrong, so the server is rejecting its reports. | On the phone, turn on automatic date and time in Android settings, then restart the app. The banner goes green once reports are accepted again. |
+| Driver phone shows **Phone clock is wrong** | The phone's clock is wrong, so the server is rejecting its reports. | On the phone, turn on automatic date and time in Android settings, then restart the app. The line under the status card goes away once reports are accepted again. |
 | Vehicles show on your **Live Map** but not in OneBusAway | The server and OneBusAway are using different GTFS schedules. Drivers pick their route and run from the server's schedule, so the ids they send are that schedule's, and OBA can only match ids from its own. | Ask your IT contact to check that the server's `GTFS_STATIC_URL` and OneBusAway use the same GTFS static feed, and that OBA is pointed at the feed address. |
 | **Deactivate** on a user returns a plain page saying **cannot deactivate the last active admin** | It is the only active admin account left. | Use your browser's Back button, create or reactivate another admin, then try again. |
 | Vehicle form rejects an id | The id has spaces or other characters, or is over 50 characters, or already exists. | Use only letters, digits, dots, hyphens and underscores; keep it to at most 50 characters; check **Show deactivated** in case the id belongs to a deactivated vehicle. |

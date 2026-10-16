@@ -77,12 +77,3 @@ internal fun distanceText(metres: Double): String =
     } else {
         stringResource(R.string.tracking_adherence_distance_km, metres / METRES_PER_KILOMETRE)
     }
-
-@Composable
-internal fun adherenceLabel(adherence: Adherence): String = when (adherence.status) {
-    AdherenceStatus.ON_TIME, AdherenceStatus.EARLY, AdherenceStatus.LATE -> deviationText(adherence.scheduleDeviationSec)
-    AdherenceStatus.OFF_SCHEDULE ->
-        stringResource(R.string.tracking_adherence_off_schedule, deviationText(adherence.scheduleDeviationSec))
-    AdherenceStatus.OFF_ROUTE ->
-        stringResource(R.string.tracking_adherence_off_route, distanceText(adherence.projection.distanceToShape))
-}

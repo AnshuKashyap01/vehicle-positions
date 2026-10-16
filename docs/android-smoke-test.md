@@ -229,10 +229,10 @@ it on its own, before or after the rest.
 
 **Expected outcome:** after the permission sequence completes and device
 location services are confirmed on, the app navigates to the Tracking screen
-showing a green "Tracking – Connected" status, the adherence panel above
-`Route R1` — "Waiting for GPS…" until the first fix arrives, then its
-judgement of that fix (Check 2b) — and a persistent foreground-service
-notification in the status bar.
+showing the status card above `Route R1`, with no dark problem line under it.
+The card reads **Waiting for GPS**, from the run's first stop, until the first
+fix arrives, then its judgement of that fix (Check 2b). A persistent
+foreground-service notification is in the status bar.
 
 There is no route-id or trip-id text box anywhere in this flow any more. The
 ids now come from the catalog, which is the point of Check 2.
@@ -268,14 +268,14 @@ date the run list showed if the phone and the agency are on different sides of
 midnight. That is `ServiceDate.kt`'s existing behaviour for the report and is
 not something the picker changes.)
 
-### Check 2b — The adherence panel follows the schedule and the route
+### Check 2b: The status card follows the schedule and the route
 
-The panel under the status banner judges every fix against the run's shape and
-schedule on the phone, by the server's own thresholds, and mirrors iOS Check 2.
-Against the stock fixture it is only interesting at 08:00 Pacific: at any other
-time `T1` is hours off its schedule and the panel correctly reads
-`Off schedule · N min late` in blue (or `… early` in red), because the server's
-window is 900 s early and 5400 s late.
+The status card judges every fix against the run's shape and schedule on the
+phone, by the server's own thresholds, and mirrors iOS Check 2. Against the
+stock fixture it is only interesting at 08:00 Pacific: at any other time `T1`
+is hours off its schedule and the card correctly reads `N min late` in blue (or
+`N min early` in red) over `Off schedule · Is this the right run?`, because the
+server's window is 900 s early and 5400 s late.
 
 To see **On time**, serve a copy of the fixture with `T1` moved to start 15
 minutes from now. Do this between 03:00 and 23:30 Pacific: the service day rolls
@@ -352,30 +352,31 @@ then start `T1` as in Check 1 (it is badged **Next** until `$ST1`).
 
 **Expected outcome:**
 
-- **Parked at ST1 before `$ST1`:** the panel reads `N min early` in red — or
-  `Off schedule · 15 min early`, if the fix lands more than 900 s ahead, past
-  the server's window. Under it, `Next: Stop ST2` with ST2's time on the
-  agency's clock (`$ST2`, whatever zone the phone is set to) and the distance
-  to it.
+- **Parked at ST1 before `$ST1`:** the card reads `N min early` in red, or
+  `15 min early` over `Off schedule · Is this the right run?` if the fix lands
+  more than 900 s ahead, past the server's window. Under it, `Next Stop ST2`
+  with ST2's time on the agency's clock (`$ST2`, whatever zone the phone is set
+  to) and the distance to it.
 - **On the route:** `On time` in green. The distance to ST2 counts down with
   every fix: every second while the Tracking screen is open (Check 2c).
-- **The detour:** within a location update, `Off route · 150 m from the route`
-  in grey. It flips back to `On time` once the fixes are back on the line.
+- **The detour:** within a location update, `Off route · 150 m` in grey. It
+  flips back to `On time` once the fixes are back on the line.
 - **Past ST2:** the next stop becomes `Stop ST3` with `$ST3`.
 - **Relaunched with the server down:** after **Resume**, the app is back on the
-  Tracking screen with a red "No connection" banner. The panel still judges every fix, and the
-  distance to ST3 keeps counting down — the shape and schedule are on the phone,
-  not refetched. Once the server is back the banner turns green again. (The
-  "Location updates sent" counter starts again from 0 with the new process.)
-- **Relaunched without the stored geometry:** the panel reads `Schedule
-  unavailable`, and the "Location updates sent" counter keeps climbing:
-  reporting does not depend on it.
+  Tracking screen with a dark "No connection" line under the status card. The
+  card still judges every fix, and the distance to ST3 keeps counting down: the
+  shape and schedule are on the phone, not refetched. Once the server is back
+  the line goes away. (The "Location updates sent" counter starts again from 0
+  with the new process.)
+- **Relaunched without the stored geometry:** the card reads `No schedule`,
+  and the "Location updates sent" counter keeps climbing: reporting does not
+  depend on it.
 - **Ending a trip:** `active_trip_geometry.json` is listed while the second
   trip runs, and gone once it has ended.
 
 ### Check 2c: The map draws the trip and follows the vehicle
 
-The Tracking screen draws the run on a map between the adherence panel and the
+The Tracking screen draws the run on a map between the status card and the
 trip counters: spec §6.3 of the iOS design, with the iOS map's sizes. With
 `MAP_PMTILES_URL` unset, as in step 1, it draws on a plain background; Check 2d
 adds the street map. Run this with `T1` started and the drive loop from Check 2b
@@ -450,11 +451,11 @@ force-stop the app, open it again and resume the shift.
   names are drawn over the route line; the stops, the next stop's name and the
   vehicle are drawn over the street names. An ⓘ at the bottom left opens
   "© OpenStreetMap contributors".
-- **Offline:** after the restart in airplane mode the banner says "No
-  connection", and the streets are all still there.
+- **Offline:** after the restart in airplane mode the line under the status
+  card says "No connection", and the streets are all still there.
 - **Dark theme** (Check 2c, step 4): the streets turn dark too.
 
-### Check 3 — Network loss flips the status red, recovery flips it back green
+### Check 3: Network loss shows the problem line, recovery clears it
 
 1. Disable networking on the device/emulator (physical airplane mode, or on
    an emulator: `adb shell svc wifi disable && adb shell svc data disable`
@@ -464,10 +465,10 @@ force-stop the app, open it again and resume the shift.
 3. Re-enable networking (`adb shell svc wifi enable && adb shell svc data
    enable`, or toggle airplane mode off on a physical device).
 
-**Expected outcome:** within ~10 seconds of the network dropping, the status
-banner flips to red "No connection". Within ~10 seconds of the network
-returning, it flips back to green "Tracking – Connected". GPS fixes captured
-while offline are dropped, not queued (v1 behavior) — the counter should
+**Expected outcome:** within ~10 seconds of the network dropping, a dark
+"No connection · Riders can't see you" line appears under the status card.
+Within ~10 seconds of the network returning, the line goes away. GPS fixes
+captured while offline are dropped, not queued (v1 behavior): the counter should
 resume climbing from wherever it left off, not "catch up".
 
 ### Check 4 — Swiping the app away doesn't stop tracking
@@ -524,7 +525,7 @@ while the prompt is up.
 3. Tap **Resume**.
 
 **Expected outcome:** the Tracking screen, with the trip duration still counted
-from the original start and the adherence panel back. Location reports reach the
+from the original start and the status card back. Location reports reach the
 server again, and there is **no** second `POST /api/v1/trips/start`: the trip
 was never ended on the server, so resuming does not start it again (a second
 start would be refused with a 409). Count the starts in the server log before
