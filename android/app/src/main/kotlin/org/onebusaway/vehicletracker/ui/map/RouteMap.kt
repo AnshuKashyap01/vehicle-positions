@@ -149,13 +149,15 @@ fun Context.glEsVersion(): Int = getSystemService(ActivityManager::class.java).d
  * third of the way up the part of the map that [contentPadding], the screen's own cards and bars
  * over it, leaves uncovered. Under it is the agency's street map once the file is on the phone,
  * and a plain background until then, with a note while the first copy downloads. The note and
- * Re-center sit at the bottom left, inside [controlsPadding].
+ * Re-center sit at the bottom left, inside [controlsPadding]. The vehicle is ringed in
+ * [vehicleRing], ARGB: the status colour of how it is keeping to the schedule.
  */
 @Composable
 fun RouteMap(
     geometry: TripGeometry,
     adherence: Adherence?,
     mapFile: MapFileState,
+    vehicleRing: Int,
     contentPadding: PaddingValues,
     controlsPadding: PaddingValues,
     modifier: Modifier = Modifier,
@@ -175,6 +177,7 @@ fun RouteMap(
         onDispose { lifecycle.removeObserver(observer) }
     }
     LaunchedEffect(geometry, adherence) { controller.show(geometry, adherence) }
+    LaunchedEffect(vehicleRing) { controller.ringVehicle(vehicleRing) }
     val density = LocalDensity.current
     val coveredTop = with(density) { contentPadding.calculateTopPadding().roundToPx() }
     val coveredBottom = with(density) { contentPadding.calculateBottomPadding().roundToPx() }
@@ -320,6 +323,9 @@ private class RouteMapController(
     private var resumed = false
     private var destroyed = false
     private var vehicleActive = false
+
+    /** The status colour round the vehicle, as ARGB. */
+    private var ring = 0
 
     /**
      * The street map file the map reads, from the first one it is given. It never changes after
@@ -585,7 +591,7 @@ private class RouteMapController(
             LocationComponentActivationOptions.builder(context, style)
                 .useDefaultLocationEngine(false)
                 .useSpecializedLocationLayer(true)
-                .locationComponentOptions(vehicleOptions(onRoute = true))
+                .locationComponentOptions(vehicleOptions())
                 .build(),
         )
         component.isLocationComponentEnabled = true
@@ -599,12 +605,28 @@ private class RouteMapController(
         })
     }
 
-    private fun vehicleOptions(onRoute: Boolean): LocationComponentOptions =
+    /**
+     * Rings the vehicle in [argb], the status card's colour, so the map says what the card says.
+     * Not the route colour iOS uses: a vehicle on its own line would be lost against it.
+     */
+    fun ringVehicle(argb: Int) {
+        if (argb == ring) return
+        ring = argb
+        val map = map ?: return
+        if (!vehicleActive) return
+        map.locationComponent.applyStyle(vehicleOptions())
+        // applyStyle also sets the map's padding to the options' own, none, which would drop the
+        // vehicle to the middle. Put the follow padding straight back, in the same frame.
+        if (following && state != null) applyFollowPadding(animationMs = 0)
+    }
+
+    private fun vehicleOptions(): LocationComponentOptions =
         LocationComponentOptions.builder(context)
-            // Blue rather than the route colour iOS uses: on a yellow route a yellow arrow is
-            // lost against the line. Grey off the route, as on iOS.
-            .gpsDrawable(if (onRoute) R.drawable.ic_map_vehicle else R.drawable.ic_map_vehicle_off_route)
-            .backgroundDrawable(R.drawable.ic_map_vehicle_no_backing)
+            // The disc and arrow on top, the status ring under them. The ring is the background,
+            // which MapLibre draws behind the vehicle and tints.
+            .gpsDrawable(R.drawable.ic_map_vehicle_puck)
+            .backgroundDrawable(R.drawable.ic_map_vehicle_ring)
+            .backgroundTintColor(ring)
             .accuracyAlpha(0f)
             .elevation(0f)
             .enableStaleState(false)
@@ -686,15 +708,14 @@ private class RouteMapController(
         style.getLayer(STOPS_LAYER)?.setProperties(circleColor(routeColor))
     }
 
-    /** Off the route the line fades, the vehicle turns grey and the matched position shows, as on iOS. */
+    /**
+     * Off the route the line fades and the matched position shows, as on iOS. The vehicle's ring
+     * turns grey with the status, through [ringVehicle].
+     */
     private fun paintOnRoute(style: Style, onRoute: Boolean) {
         val opacity = if (onRoute) 1f else OFF_ROUTE_OPACITY
         style.getLayer(CASING_LAYER)?.setProperties(lineOpacity(opacity))
         style.getLayer(ROUTE_LAYER)?.setProperties(lineOpacity(opacity))
-        map?.locationComponent?.applyStyle(vehicleOptions(onRoute))
-        // applyStyle also sets the map's padding to the options' own, none, which would drop the
-        // vehicle to the middle. Put the follow padding straight back, in the same frame.
-        if (following && state != null) applyFollowPadding(animationMs = 0)
         setSnappedVisible(style, visible = !onRoute)
     }
 

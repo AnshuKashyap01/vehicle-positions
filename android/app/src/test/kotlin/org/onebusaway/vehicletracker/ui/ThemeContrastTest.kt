@@ -3,6 +3,10 @@ package org.onebusaway.vehicletracker.ui
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.onebusaway.vehicletracker.ui.theme.DarkColors
@@ -14,6 +18,7 @@ import org.onebusaway.vehicletracker.ui.theme.LightStatusColors
 import org.onebusaway.vehicletracker.ui.theme.ProblemColors
 import org.onebusaway.vehicletracker.ui.theme.StatusColors
 import org.onebusaway.vehicletracker.ui.theme.StatusTone
+import java.io.File
 
 /**
  * WCAG contrast for the pairs the theme promises, in both themes: 4.5:1 for text, and 7:1 for white
@@ -77,6 +82,31 @@ class ThemeContrastTest {
             for (tone in StatusTone.entries) {
                 val status = theme.status[tone]
                 assertContrast(7f, "${theme.name} $tone onFill", status.onFill, status.fill)
+            }
+        }
+    }
+
+    /**
+     * The ring round the vehicle is the status text colour, on the street map's land and its
+     * background, read from the committed styles. A ring is a graphic, so 3:1.
+     */
+    @Test fun `the vehicle's ring stands out on the street map`() {
+        for (theme in themes) {
+            val style = Json.parseToJsonElement(File("src/main/assets/map/style-${theme.name}.json").readText()).jsonObject
+            val paint = style.getValue("layers").jsonArray.map { it.jsonObject }.associate { layer ->
+                layer.getValue("id").jsonPrimitive.content to layer["paint"]?.jsonObject
+            }
+            val land = listOf(
+                "background" to paint.getValue("background")?.getValue("background-color"),
+                "earth" to paint.getValue("earth")?.getValue("fill-color"),
+            )
+            for ((layer, value) in land) {
+                val hex = requireNotNull(value).jsonPrimitive.content
+                require(hex.matches(Regex("#[0-9a-fA-F]{6}"))) { "the $layer layer is no longer a plain colour: $hex" }
+                val map = Color(0xFF000000 or hex.removePrefix("#").toLong(16))
+                for (tone in StatusTone.entries) {
+                    assertContrast(3f, "${theme.name} $tone ring on the map's $layer", theme.status[tone].text, map)
+                }
             }
         }
     }

@@ -403,22 +403,22 @@ going.
 
 - **Before the first fix:** the whole route, in the route's colour over a darker
   edge, with its three stops as small ringed circles.
-- **From the first fix:** the map closes in on the vehicle, a blue arrowhead
-  that sits a third of the way up the part of the map between the status card
-  and the trip bar, with the route ahead above it, and
-  moves with it between fixes without jumping. The next stop is drawn larger
+- **From the first fix:** the map closes in on the vehicle, an arrow on a dark
+  disc ringed in the status card's colour. It sits a third of the way up the
+  part of the map between the status card and the trip bar, with the route
+  ahead above it, and moves with it between fixes without jumping. The next stop is drawn larger
   with its name beside it, and that moves on to ST3 once ST2 is passed.
-- **The detour:** the route fades, the arrowhead turns grey, and a dot marks
+- **The detour:** the route fades, the ring turns grey, and a dot marks
   where on the route the vehicle was matched. All three are undone once the
   fixes are back on the line.
 - **Dragging:** the map stops following and a **Re-center** chip appears at
-  the bottom left, above the trip bar.
-  Tapping it, or leaving the map alone for 10 seconds, takes it back to the
-  vehicle.
+  the bottom left, above the trip bar. Tapping it, or leaving the map alone
+  for 10 seconds, takes it back to the vehicle.
 - **Reports:** the count grows by 6 or 7 in each minute, with the screen open
   and with the app in the background alike. The screen takes a fix every second
   to draw; the server still gets one about every 10 seconds.
-- **Dark theme:** the map background turns dark and the stop name light.
+- **Dark theme:** the map background turns dark, and the stop name and the
+  vehicle's disc light.
 
 On the emulator the map stays north-up: `adb emu geo fix` sends a position with
 no course. On a phone it turns to keep the direction of travel pointing up, and

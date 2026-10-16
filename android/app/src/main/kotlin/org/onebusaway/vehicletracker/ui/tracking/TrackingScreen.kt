@@ -41,6 +41,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -91,7 +92,8 @@ fun TrackingScreen(
             // With no geometry there is no route to draw, and the status card already says so.
             val geometry = state.tracking.geometry
             if (mapSupported && geometry != null) {
-                RouteMap(geometry, state.tracking.adherence, state.mapFile, contentPadding, controlsPadding, modifier)
+                val ring = AppTheme.statusColors[vehicleTone(state.tracking.adherence)].text
+                RouteMap(geometry, state.tracking.adherence, state.mapFile, ring.toArgb(), contentPadding, controlsPadding, modifier)
             } else {
                 Spacer(modifier)
             }
