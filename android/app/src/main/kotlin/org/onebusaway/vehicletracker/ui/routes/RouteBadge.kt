@@ -51,8 +51,8 @@ data class RouteBadgeModel(val shortName: String, val color: Color?, val textCol
 
 /**
  * A route's short name on its GTFS colour, as riders see it. [color] and [textColor] are the feed's six hex
- * digits; the route list reads them off the route, and the Tracking screen off the trip it keeps. The trip
- * bar draws it larger, in [style] and [shape], centred in whatever size [modifier] gives it.
+ * digits; the Tracking screen reads them off the trip it keeps. The trip bar draws it larger, in [style] and
+ * [shape], centred in whatever size [modifier] gives it.
  */
 @Composable
 fun RouteBadge(

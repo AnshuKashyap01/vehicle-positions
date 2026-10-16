@@ -293,8 +293,10 @@ takes about ten minutes. Before you start, make sure the driver has an account
    you**, go back to section 6, then have the driver tap **Check again**.
 5. Next the driver picks the route, then the run, from your agency's GTFS
    schedule. There is nothing to type:
-   - **Select a Route** lists the routes in the schedule, each with its number
-     on its colour. Typing in **Route number or name** narrows the list. After
+   - **Choose a route** lists the routes in the schedule, each with its number
+     on its colour and its name; a schedule that names none of its routes shows
+     just the numbers, as a grid. Typing in **Route number or name** narrows the
+     list. After
      the first trip, the routes that phone has driven appear at the top under
      **Recent**; this is what most drivers will use day to day. If a route the
      driver needs is missing, tell your IT contact: a route is listed only if

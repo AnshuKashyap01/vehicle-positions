@@ -211,7 +211,7 @@ it on its own, before or after the rest.
    emulator), and log in as `driver@example.com` / `driverpass123`.
 2. With exactly one assigned vehicle, the app should skip straight past the
    vehicle list (auto-select). With more than one, pick `bus-1`.
-3. **Select a Route** lists the catalog: `1 Straight` and `2 Loop`, each with
+3. **Choose a route** lists the catalog: `1 Straight` and `2 Loop`, each with
    its short name on its GTFS colour. Route 2's feed gives no `route_color`, so
    its badge falls back to the app's own colour — that is correct, not a
    missing style. Type `1` in the search box: route 1 stays and route 2 goes
@@ -609,8 +609,8 @@ immediate: no migration runs and nothing listens on `$PORT`.
 
 **Expected outcome:** to the app, a server that refused to start is simply a
 server that is down. **Choose your bus** reads "Couldn't load your buses" with a
-**Try again** button. The route picker's "This server has no schedule
-loaded" message does not appear: only a server that is running without a
+**Try again** button. The route picker's "No schedule on this server
+yet" message does not appear: only a server that is running without a
 catalog (a build from before the schedule was required) can produce it.
 
 3. Put the fixture back and start the server again, then tap **Try again**:
@@ -620,7 +620,7 @@ catalog (a build from before the schedule was required) can produce it.
    go run . > /tmp/vt-server.log 2>&1 &
    ```
 
-   The vehicle list loads again, and from there **Select a Route** lists
+   The vehicle list loads again, and from there **Choose a route** lists
    `1 Straight` and `2 Loop` as in Check 1.
 
 ## Cleanup

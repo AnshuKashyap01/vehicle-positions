@@ -44,16 +44,27 @@
     <string name="vehicles_unfavorite_description">Remove %1$s from favorites</string>
 
     <!-- Route picker -->
-    <string name="routes_title">Select a Route</string>
+    <string name="routes_title">Choose a route</string>
     <string name="routes_search_label">Route number or name</string>
     <string name="routes_section_recent">Recent</string>
     <string name="routes_section_all">All routes</string>
+    <!-- Over a grid of route numbers, from a feed that names none of its routes: how many there are. -->
+    <plurals name="routes_section_all_count">
+        <item quantity="one">All routes · %1$d</item>
+        <item quantity="other">All routes · %1$d</item>
+    </plurals>
     <string name="routes_section_matches">Matches</string>
-    <string name="routes_search_no_matches">No routes match your search.</string>
-    <string name="routes_empty">The schedule has no routes.</string>
-    <string name="routes_error_message">Could not load the routes.</string>
-    <string name="routes_no_schedule">This server has no schedule loaded, so there are no routes to start a trip on.</string>
-    <string name="routes_retry_button">Retry</string>
+    <!-- What the driver typed, e.g. "No route matches 999". -->
+    <string name="routes_search_no_matches">No route matches %1$s</string>
+    <string name="routes_search_no_matches_detail">Search by the number on the sign, or part of the name.</string>
+    <string name="routes_empty">The schedule has no routes</string>
+    <string name="routes_empty_detail">Ask your agency\'s admin to check the schedule.</string>
+    <string name="routes_check_again">Check again</string>
+    <string name="routes_error_message">Couldn\'t load the routes</string>
+    <string name="routes_error_detail">Check your connection and try again.</string>
+    <string name="routes_no_schedule">No schedule on this server yet</string>
+    <string name="routes_no_schedule_detail">An operator has to load one before trips can start. Tell your agency\'s admin.</string>
+    <string name="routes_retry_button">Try again</string>
     <!-- Stands in for a route whose feed gave no short name. -->
     <string name="routes_badge_placeholder">\u2014</string>
 

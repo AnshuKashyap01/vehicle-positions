@@ -67,6 +67,10 @@ import org.onebusaway.vehicletracker.ui.login.LoginScreenContent
 import org.onebusaway.vehicletracker.ui.login.LoginUiState
 import org.onebusaway.vehicletracker.ui.resume.ResumeShiftScreenContent
 import org.onebusaway.vehicletracker.ui.resume.ResumeShiftUiState
+import org.onebusaway.vehicletracker.ui.routes.RouteBadgeModel
+import org.onebusaway.vehicletracker.ui.routes.RouteItem
+import org.onebusaway.vehicletracker.ui.routes.RoutesScreenContent
+import org.onebusaway.vehicletracker.ui.routes.RoutesUiState
 import org.onebusaway.vehicletracker.ui.tracking.StatusArea
 import org.onebusaway.vehicletracker.ui.tracking.TrackingScreenContent
 import org.onebusaway.vehicletracker.ui.tracking.TrackingUiState
@@ -789,5 +793,102 @@ class ScreenFlowTest {
         compose.onNode(spinner).assertDoesNotExist()
         compose.mainClock.advanceTimeBy(SPINNER_DELAY_MS)
         compose.onNode(spinner).assertExists()
+    }
+
+    // --- The route step ---
+
+    private fun route(id: String, short: String, longName: String = "") =
+        RouteItem(id, RouteBadgeModel.of(short, "FDB71A", "000000"), longName)
+
+    private val namedRoutes = listOf(
+        route("R7", "7", "Rainier Beach - Downtown Seattle"),
+        route("R8", "8", "Rainier Beach - Seattle Center"),
+        route("R36", "36", "Beacon Hill - Downtown Seattle"),
+    )
+    private val numberedRoutes = listOf("1", "2", "3", "4", "5", "7").map { route("R$it", it) }
+
+    private fun showRoutes(state: RoutesUiState, onRouteClick: (String) -> Unit = {}, onRetry: () -> Unit = {}) {
+        compose.setContent { RoutesScreenContent(state, onRouteClick, onQueryChange = {}, onRetry) }
+    }
+
+    @Test
+    fun routesScreen_listsRecentBadgesThenEveryRouteAsARowWithItsName() {
+        var opened: String? = null
+        showRoutes(
+            RoutesUiState.Loaded(namedRoutes, namedRoutes, recent = listOf(namedRoutes[2]), query = "", grid = false),
+            onRouteClick = { opened = it },
+        )
+
+        compose.onNode(hasText(getString(R.string.routes_title)) and heading).assertIsDisplayed()
+        val recentLabel = top(compose.onNode(hasText(getString(R.string.routes_section_recent)) and heading))
+        val recentBadge = top(compose.onNodeWithContentDescription(getString(R.string.setup_route, "36")))
+        val allLabel = top(compose.onNode(hasText(getString(R.string.routes_section_all)) and heading))
+        assertTrue("the recent badge sits between its label and All routes", recentLabel < recentBadge && recentBadge < allLabel)
+
+        // A row is one button with the route's number and name.
+        compose.onNode(hasText("8") and hasText("Rainier Beach - Seattle Center") and hasClickAction()).performClick()
+        assertEquals("R8", opened)
+        compose.onNodeWithContentDescription(getString(R.string.setup_route, "36")).performClick()
+        assertEquals("R36", opened)
+    }
+
+    @Test
+    fun routesScreen_showsAGridOfBadgesWhenTheFeedNamesNoRoute() {
+        var opened: String? = null
+        showRoutes(RoutesUiState.Loaded(numberedRoutes, numberedRoutes, emptyList(), "", grid = true), onRouteClick = { opened = it })
+
+        val count = InstrumentationRegistry.getInstrumentation().targetContext.resources
+            .getQuantityString(R.plurals.routes_section_all_count, numberedRoutes.size, numberedRoutes.size)
+        compose.onNode(hasText(count) and heading).assertIsDisplayed()
+        // Four to a row: the first four badges line up, and the fifth starts the next row.
+        val tops = listOf("1", "2", "3", "4", "5").map { top(compose.onNodeWithContentDescription(getString(R.string.setup_route, it))) }
+        assertEquals(1, tops.take(4).distinct().size)
+        assertTrue(tops[4] > tops[0])
+
+        compose.onNodeWithContentDescription(getString(R.string.setup_route, "7")).performClick()
+        assertEquals("R7", opened)
+    }
+
+    @Test
+    fun routesScreen_saysWhenNoRouteMatchesTheSearch() {
+        showRoutes(RoutesUiState.Loaded(namedRoutes, emptyList(), emptyList(), "999", grid = false))
+
+        compose.onNode(hasText(getString(R.string.routes_search_no_matches, "999")) and heading).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_search_no_matches_detail)).assertIsDisplayed()
+    }
+
+    @Test
+    fun routesScreen_checksAgainWhenTheScheduleHasNoRoutes() {
+        var reloads = 0
+        showRoutes(RoutesUiState.Loaded(emptyList(), emptyList(), emptyList(), "", grid = true), onRetry = { reloads++ })
+
+        compose.onNodeWithText(getString(R.string.routes_empty)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_empty_detail)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_check_again)).performClick()
+        assertEquals(1, reloads)
+    }
+
+    @Test
+    fun routesScreen_saysWhoToTellWhenTheServerHasNoSchedule() {
+        showRoutes(RoutesUiState.NoSchedule)
+
+        compose.onNodeWithText(getString(R.string.routes_no_schedule)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_no_schedule_detail)).assertIsDisplayed()
+        compose.onNode(hasClickAction()).assertDoesNotExist()
+    }
+
+    @Test
+    fun routesScreen_triesAgainAfterAFailedLoadButNotWhenSignedOut() {
+        var reloads = 0
+        var state by mutableStateOf<RoutesUiState>(RoutesUiState.Error(retry = true))
+        compose.setContent { RoutesScreenContent(state, onRouteClick = {}, onQueryChange = {}, onRetry = { reloads++ }) }
+
+        compose.onNodeWithText(getString(R.string.routes_error_detail)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_retry_button)).performClick()
+        assertEquals(1, reloads)
+
+        state = RoutesUiState.Error(retry = false)
+        compose.onNodeWithText(getString(R.string.routes_error_message)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_retry_button)).assertDoesNotExist()
     }
 }

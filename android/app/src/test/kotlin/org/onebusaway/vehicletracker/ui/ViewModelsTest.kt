@@ -17,6 +17,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -31,8 +32,11 @@ import org.onebusaway.vehicletracker.engine.TripFixtures
 import org.onebusaway.vehicletracker.engine.TripGeometry
 import org.onebusaway.vehicletracker.ui.login.LoginError
 import org.onebusaway.vehicletracker.ui.login.LoginViewModel
+import org.onebusaway.vehicletracker.ui.routes.RouteBadgeModel
+import org.onebusaway.vehicletracker.ui.routes.RouteItem
 import org.onebusaway.vehicletracker.ui.routes.RoutesUiState
 import org.onebusaway.vehicletracker.ui.routes.RoutesViewModel
+import org.onebusaway.vehicletracker.ui.routes.showsAsGrid
 import org.onebusaway.vehicletracker.ui.runs.RunHighlight
 import org.onebusaway.vehicletracker.ui.runs.RunsUiState
 import org.onebusaway.vehicletracker.ui.runs.RunsViewModel
@@ -474,6 +478,28 @@ class ViewModelsTest {
             // Newest first, and the route the agency has since dropped from the feed is skipped
             // rather than shown as a row that cannot be tapped.
             assertEquals(listOf("R9", "R5"), loadedRoutes(vm).recent.map { it.id })
+        }
+    }
+
+    private fun routeItem(id: String, longName: String) = RouteItem(id, RouteBadgeModel(id, null, null), longName)
+
+    @Test fun `routes are a grid only when the feed names none of them`() {
+        assertTrue(showsAsGrid(listOf(routeItem("7", ""), routeItem("8", " "))))
+        // One named route keeps every route a row, so the list never mixes rows and badges.
+        assertFalse(showsAsGrid(listOf(routeItem("7", ""), routeItem("8", "Rainier Beach"))))
+        assertFalse(showsAsGrid(listOf(routeItem("7", "Downtown"), routeItem("8", "Rainier Beach"))))
+    }
+
+    @Test fun `a search does not change rows into a grid`() = runTest(dispatcher) {
+        val mixed = """{"routes":[{"id":"R7","short_name":"7","long_name":"","color":"","text_color":"","type":3},""" +
+            """{"id":"R8","short_name":"8","long_name":"Rainier Beach","color":"","text_color":"","type":3}]}"""
+        withRoutesViewModel(response = MockResponse().setBody(mixed)) { vm ->
+            assertFalse(loadedRoutes(vm).grid)
+
+            // Only the unnamed route is left, but the layout follows the whole feed.
+            vm.onQueryChange("7")
+            assertEquals(listOf("R7"), loadedRoutes(vm).visible.map { it.id })
+            assertFalse(loadedRoutes(vm).grid)
         }
     }
 

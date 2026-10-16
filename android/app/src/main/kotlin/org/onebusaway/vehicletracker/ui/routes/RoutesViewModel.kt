@@ -1,5 +1,6 @@
 package org.onebusaway.vehicletracker.ui.routes
 
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -15,17 +16,23 @@ import org.onebusaway.vehicletracker.data.TripStateStore
 import org.onebusaway.vehicletracker.data.api.RouteDto
 import javax.inject.Inject
 
+/** One route as the picker draws it: its badge, with the feed's colours already read, and its long name. */
+@Immutable
+data class RouteItem(val id: String, val badge: RouteBadgeModel, val longName: String)
+
 sealed interface RoutesUiState {
     data object Loading : RoutesUiState
 
     data class Loaded(
         /** Every route in the catalog, unaffected by [query]. */
-        val routes: List<RouteDto>,
+        val routes: List<RouteItem>,
         /** [routes] narrowed by [query]. */
-        val visible: List<RouteDto>,
+        val visible: List<RouteItem>,
         /** Recently driven routes, newest first; empty while the driver is searching. */
-        val recent: List<RouteDto>,
+        val recent: List<RouteItem>,
         val query: String,
+        /** Whether [routes] are drawn as a grid of badges rather than rows; see [showsAsGrid]. */
+        val grid: Boolean,
     ) : RoutesUiState
 
     /**
@@ -43,8 +50,8 @@ class RoutesViewModel @Inject constructor(
     private val catalogRepository: CatalogRepository,
     tripStateStore: TripStateStore,
 ) : ViewModel() {
-    /** null while a load is in flight; otherwise the outcome of the last one. */
-    private val loadResult = MutableStateFlow<Result<List<RouteDto>>?>(null)
+    /** null while a load is in flight; otherwise the outcome of the last one, with every route's badge read once. */
+    private val loadResult = MutableStateFlow<Result<List<RouteItem>>?>(null)
     private val searchQuery = MutableStateFlow("")
 
     // Started eagerly so the combined state tracks the stored recents for as long as the
@@ -64,6 +71,7 @@ class RoutesViewModel @Inject constructor(
                     // Recents are a shortcut past the search, so they make way for one.
                     recent = if (query.isEmpty()) routes.matching(recentIds) else emptyList(),
                     query = query,
+                    grid = showsAsGrid(routes),
                 )
             }
             result.exceptionOrNull() is ApiError.CatalogUnavailable -> RoutesUiState.NoSchedule
@@ -83,22 +91,30 @@ class RoutesViewModel @Inject constructor(
 
     private fun load() {
         loadResult.value = null
-        viewModelScope.launch { loadResult.value = catalogRepository.routes() }
+        viewModelScope.launch { loadResult.value = catalogRepository.routes().map { routes -> routes.map { it.toItem() } } }
     }
 }
+
+private fun RouteDto.toItem() = RouteItem(id, RouteBadgeModel.of(shortName, color, textColor), longName)
+
+/**
+ * A feed that names none of its routes, as King County's names none, is a list of bare numbers, which reads better
+ * as a grid of badges. A feed with any long names keeps its rows, so a few unnamed routes do not make it uneven.
+ */
+internal fun showsAsGrid(routes: List<RouteItem>): Boolean = routes.none { it.longName.isNotBlank() }
 
 /**
  * Prefix on the number, substring on the name — the rule `RoutesView` searches by, so a driver
  * typing "5" is offered route 5 and not route 15. [query] arrives trimmed and lowercased; an
  * empty one matches everything.
  */
-private fun RouteDto.matches(query: String): Boolean =
-    query.isEmpty() || shortName.lowercase().startsWith(query) || longName.lowercase().contains(query)
+private fun RouteItem.matches(query: String): Boolean =
+    query.isEmpty() || badge.shortName.lowercase().startsWith(query) || longName.lowercase().contains(query)
 
 /**
  * The routes named by [ids], in the order given, skipping any the catalog no longer has:
  * recently driven routes are remembered as bare ids, so the picker resolves them against what
  * is actually on offer.
  */
-private fun List<RouteDto>.matching(ids: List<String>): List<RouteDto> =
+private fun List<RouteItem>.matching(ids: List<String>): List<RouteItem> =
     ids.mapNotNull { id -> firstOrNull { it.id == id } }
