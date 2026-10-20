@@ -1626,7 +1626,9 @@ paths:
       description: |
         Creates a new active trip for the authenticated driver. The driver
         must be assigned to the vehicle and must not already have an active
-        trip. Request bodies are capped at 1 KiB.
+        trip. A non-empty `route_id` or `gtfs_trip_id` must be in the loaded
+        GTFS schedule, and the trip must run on the route; otherwise 400.
+        Request bodies are capped at 1 KiB.
       requestBody:
         required: true
         content:
