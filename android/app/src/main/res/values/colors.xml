@@ -1,5 +1,7 @@
 <resources>
-    <color name="ic_launcher_background">#0B5394</color>
+    <!-- The launcher icon's green where one colour is needed, as behind the launch screen's icon: the middle
+         of ic_launcher_gradient. -->
+    <color name="ic_launcher_background">#5EAB3D</color>
     <!-- The theme's surface, which the window shows before Compose draws and behind the system bars. -->
     <color name="window_background">#FFFFFF</color>
 </resources>
