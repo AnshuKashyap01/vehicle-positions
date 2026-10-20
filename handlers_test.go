@@ -15,6 +15,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/time/rate"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -891,10 +892,13 @@ func TestHandlePostLocation_RateLimitBlocksSecondRequest(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, w1.Code, "first request must succeed")
 
 	w2 := postLocationWithClaims(handler, loc, claims)
-	assert.Equal(t, http.StatusTooManyRequests, w2.Code, "immediate second request must be rate limited")
+	assert.Equal(t, http.StatusCreated, w2.Code, "the burst absorbs one report that arrives early")
+
+	w3 := postLocationWithClaims(handler, loc, claims)
+	assert.Equal(t, http.StatusTooManyRequests, w3.Code, "a request beyond the burst must be rate limited")
 
 	var resp map[string]string
-	err := json.NewDecoder(w2.Body).Decode(&resp)
+	err := json.NewDecoder(w3.Body).Decode(&resp)
 	require.NoError(t, err)
 	assert.Contains(t, resp["error"], "rate limit exceeded")
 }
@@ -911,6 +915,7 @@ func TestHandlePostLocation_RateLimitNotSavedOnExcess(t *testing.T) {
 	loc := LocationReport{VehicleID: "bus-flood", Latitude: 1, Longitude: 2, Timestamp: time.Now().Unix()}
 	claims := jwt.MapClaims{"sub": "driver-flood"}
 
+	postLocationWithClaims(handler, loc, claims)
 	postLocationWithClaims(handler, loc, claims)
 	mStore.saveCount = 0
 
@@ -933,8 +938,10 @@ func TestHandlePostLocation_RateLimitDifferentVehiclesAreIndependent(t *testing.
 	claimsA := jwt.MapClaims{"sub": "driver-A"}
 	claimsB := jwt.MapClaims{"sub": "driver-B"}
 
-	assert.Equal(t, http.StatusCreated, postLocationWithClaims(handler, locA, claimsA).Code)
-	assert.Equal(t, http.StatusCreated, postLocationWithClaims(handler, locB, claimsB).Code)
+	for range rateBurst {
+		assert.Equal(t, http.StatusCreated, postLocationWithClaims(handler, locA, claimsA).Code)
+		assert.Equal(t, http.StatusCreated, postLocationWithClaims(handler, locB, claimsB).Code)
+	}
 
 	assert.Equal(t, http.StatusTooManyRequests, postLocationWithClaims(handler, locA, claimsA).Code)
 	assert.Equal(t, http.StatusTooManyRequests, postLocationWithClaims(handler, locB, claimsB).Code)
@@ -1090,5 +1097,19 @@ func TestHandlePostLocation_BearingSpeedBoundaries(t *testing.T) {
 			assert.Equal(t, http.StatusCreated, w.Code, "boundary value should be accepted")
 			assert.True(t, mStore.saved, "boundary value should have been saved")
 		})
+	}
+}
+
+// TestVehicleRateLimiter_ToleratesJitter replays the gaps a client reporting
+// every 5 s by its own clock produces once network delay is added: one gap
+// short, the next long by the same amount. None may be refused.
+func TestVehicleRateLimiter_ToleratesJitter(t *testing.T) {
+	// The same bucket NewVehicleRateLimiter gives each driver, driven by
+	// explicit times so the test needs no sleeps.
+	limiter := rate.NewLimiter(rate.Every(rateInterval), rateBurst)
+	at := time.Now()
+	for i, gap := range []time.Duration{0, 4500 * time.Millisecond, 5500 * time.Millisecond, 4200 * time.Millisecond, 5800 * time.Millisecond, 5 * time.Second} {
+		at = at.Add(gap)
+		assert.True(t, limiter.AllowN(at, 1), "report %d after a %s gap was refused", i, gap)
 	}
 }

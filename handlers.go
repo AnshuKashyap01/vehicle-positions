@@ -160,7 +160,7 @@ func handlePostLocation(store LocationSaver, tracker *Tracker, rl *VehicleRateLi
 		}
 		loc.DriverID = sub
 		if !rl.Allow(loc.DriverID) {
-			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate limit exceeded: at most one location report per 5 seconds per driver"})
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "rate limit exceeded: at most one location report per 5 seconds per driver, on average"})
 			return
 		}
 

@@ -190,8 +190,9 @@ paths:
       description: |
         Records a GPS fix from a driver's device. The driver identity comes
         from the JWT `sub` claim, not the request body. Requests are
-        rate-limited to one report per driver per 5 seconds; additional
-        reports receive HTTP 429. Request bodies are capped at 1 MiB.
+        rate-limited to one report per driver per 5 seconds on average, with a
+        burst of 2 so a report that network delay brings in early is not
+        refused; additional reports receive HTTP 429. Request bodies are capped at 1 MiB.
       requestBody:
         required: true
         content:
