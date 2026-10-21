@@ -1,9 +1,10 @@
 import Foundation
 import VehiclePositionsKit
 
-/// Builds the app's long-lived objects once and wires them together. The
-/// token closure reads the Keychain on every request, so a re-login mid-trip
-/// takes effect on the next report.
+/// Builds the app's long-lived objects once and wires them together. Every
+/// client reads the token from the Keychain on each request, so a re-login
+/// mid-trip takes effect on the next report, and every client shares one
+/// `TokenRefresher`, so the app makes one refresh at a time.
 @MainActor
 final class AppContainer {
     /// The one container the app and the CarPlay scene share, so the car and
@@ -16,6 +17,7 @@ final class AppContainer {
     init() {
         let settings = AppSettings()
         let tokens = KeychainTokenStore()
+        let refresher = TokenRefresher(tokens: tokens)
         self.settings = settings
         session = TripSession(
             settings: settings,
@@ -23,7 +25,7 @@ final class AppContainer {
             store: FileActiveTripStore(),
             locations: CoreLocationSource(configuration: .automotiveNavigation),
             makeAPI: { url, tokens in
-                try TrackerClient(baseURL: url, token: { (try? tokens.load())?.token })
+                try TrackerClient(baseURL: url, tokens: tokens, refresher: refresher)
             }
         )
     }

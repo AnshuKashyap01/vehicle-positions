@@ -2,17 +2,22 @@ import Foundation
 
 /// The server over URLSession. HTTPS-only outside development hosts, never
 /// follows a redirect (a token or a position must not be re-sent to a host the
-/// request was not addressed to), and reads the bearer token on every request
-/// so a re-login mid-trip takes effect at once.
+/// request was not addressed to), and reads the bearer token from `tokens` on
+/// every request so a re-login mid-trip takes effect at once. Given a
+/// `refresher`, it renews an access token the server turned away with a 401
+/// and sends the request again, once.
 nonisolated final class TrackerClient: TrackerAPI, Sendable {
     let baseURL: URL
     private let session: URLSession
-    private let token: @Sendable () -> String?
+    private let tokens: any TokenStoring
+    private let refresher: TokenRefresher?
 
-    init(baseURL: URL, token: @escaping @Sendable () -> String?, configuration: URLSessionConfiguration = .ephemeral) throws {
+    init(baseURL: URL, tokens: any TokenStoring, refresher: TokenRefresher? = nil,
+         configuration: URLSessionConfiguration = .ephemeral) throws {
         guard ServerURLPolicy.isAllowed(baseURL) else { throw APIError.insecureURL }
         self.baseURL = baseURL
-        self.token = token
+        self.tokens = tokens
+        self.refresher = refresher
         // A driver on a dead cell keeps moving; the default 60 s means a
         // stuck request outlives a dozen fixes. Copied so a configuration the
         // caller still holds (the tests' stub) is not mutated underneath it.
@@ -69,10 +74,32 @@ nonisolated final class TrackerClient: TrackerAPI, Sendable {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
-        if authorized, let token = token() {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // Sign-in and refresh go without a token, so neither can set off a
+        // refresh: a wrong password must not quietly renew the session of
+        // whoever signed in on this phone before.
+        guard authorized, let token = (try? tokens.load())?.token else {
+            return try await perform(request)
         }
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            return try await perform(request)
+        } catch let error as APIError {
+            guard case .status(401, _) = error, let refresher else { throw error }
+            switch await refresher.afterUnauthorized(failedToken: token, refresh: { [self] in await refresh($0) }) {
+            case .retry(let renewed):
+                request.setValue("Bearer \(renewed)", forHTTPHeaderField: "Authorization")
+                // A 401 on the retry is the caller's: the token is new, so
+                // another refresh would not help.
+                return try await perform(request)
+            case .refused:
+                throw error
+            case .unreachable(let message):
+                throw APIError.transport(message)
+            }
+        }
+    }
 
+    private func perform(_ request: URLRequest) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -88,6 +115,26 @@ nonisolated final class TrackerClient: TrackerAPI, Sendable {
             throw APIError.status(http.statusCode, message: message)
         }
         return data
+    }
+
+    /// `POST /api/v1/auth/refresh`, for the refresher. Only a 401 says the
+    /// server refused the token. Anything else (no answer, a 429 or 5xx, a
+    /// reply that is not a token pair) says nothing about it, so the token is
+    /// kept for the next request.
+    private func refresh(_ refreshToken: String) async -> TokenRefresher.RefreshReply {
+        do {
+            let body = try encode(RefreshRequest(refreshToken: refreshToken))
+            return .issued(try decode(AuthTokens.self, try await send("POST", "api/v1/auth/refresh", body: body, authorized: false)))
+        } catch APIError.status(401, _) {
+            return .refused
+        } catch APIError.status(let code, _) {
+            return .unreachable("refresh failed with HTTP \(code)")
+        } catch APIError.transport(let message) {
+            return .unreachable(message)
+        } catch {
+            // A 200 that is not a token pair, such as a captive portal's page.
+            return .unreachable(error.localizedDescription)
+        }
     }
 
     private func encode(_ value: some Encodable) throws -> Data {

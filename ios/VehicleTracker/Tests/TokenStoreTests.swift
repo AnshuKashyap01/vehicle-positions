@@ -12,12 +12,6 @@ import Testing
         StoredToken(token: "jwt", issuedAt: Date(timeIntervalSince1970: 1_792_476_000))
     }
 
-    @Test func freshnessIsTwentyFourHours() {
-        let t = StoredToken(token: "x", issuedAt: issued)
-        #expect(t.isFresh(now: issued.addingTimeInterval(23 * 3600)))
-        #expect(!t.isFresh(now: issued.addingTimeInterval(24 * 3600 + 1)))
-    }
-
     @Test func aRefreshTokenKeepsTheDriverSignedInPastExpiry() {
         let t = StoredToken(token: "a1", issuedAt: issued, refreshToken: "r1", expiresAt: issued.addingTimeInterval(900))
         #expect(t.isSignedIn(now: issued.addingTimeInterval(901)))

@@ -122,10 +122,11 @@ final class TripSession {
         self.makeAPI = makeAPI
         self.now = now
 
-        // A fresh token and a known server mean the driver stays signed in; a
-        // stored trip on top of that is one iOS interrupted, shown paused until
-        // the driver resumes it from the foreground.
-        if let token = try? tokens.load(), token.isFresh(now: now()),
+        // A token that can still be used or renewed and a known server mean
+        // the driver stays signed in; a stored trip on top of that is one iOS
+        // interrupted, shown paused until the driver resumes it from the
+        // foreground.
+        if let token = try? tokens.load(), token.isSignedIn(now: now()),
            let url = settings.serverURL, let api = try? makeAPI(url, tokens) {
             self.api = api
             phase = .idle
@@ -175,10 +176,9 @@ final class TripSession {
     func reauthenticate(password: String) async throws {
         guard let url = settings.serverURL else { throw TripSessionError.notSignedIn }
         try await signIn(serverURL: url, email: settings.email, password: password)
-        // A fresh token clears an auth problem at once; the token closure
-        // passed by the app container reads the store on every request, so
-        // the token itself takes effect on the next report without further
-        // work here.
+        // A fresh token clears an auth problem at once; every client reads
+        // the store on every request, so the token itself takes effect on the
+        // next report without further work here.
         reporter?.clearAuthProblem()
         refreshReporting()
     }

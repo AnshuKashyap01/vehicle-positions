@@ -22,10 +22,6 @@ nonisolated struct StoredToken: Sendable, Codable, Equatable {
     func isSignedIn(now: Date) -> Bool {
         refreshToken != nil || now < (expiresAt ?? issuedAt.addingTimeInterval(Self.oldBuildLifetime))
     }
-
-    func isFresh(now: Date, lifetime: TimeInterval = 24 * 3600) -> Bool {
-        now.timeIntervalSince(issuedAt) < lifetime
-    }
 }
 
 extension StoredToken {

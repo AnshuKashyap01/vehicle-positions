@@ -6,12 +6,13 @@ import Testing
     let base = URL(string: "https://positions.example.org")!
 
     func client(token: String? = "tok") throws -> TrackerClient {
-        try TrackerClient(baseURL: base, token: { token }, configuration: StubURLProtocol.configuration())
+        let tokens = InMemoryTokenStore(token.map { StoredToken(token: $0, issuedAt: Date()) })
+        return try TrackerClient(baseURL: base, tokens: tokens, configuration: StubURLProtocol.configuration())
     }
 
     @Test func refusesAnInsecureBaseURL() {
         #expect(throws: APIError.insecureURL) {
-            try TrackerClient(baseURL: URL(string: "http://positions.example.org")!, token: { nil })
+            try TrackerClient(baseURL: URL(string: "http://positions.example.org")!, tokens: InMemoryTokenStore())
         }
     }
 
@@ -136,5 +137,137 @@ import Testing
         } catch {
             Issue.record("unexpected \(error)")
         }
+    }
+
+    // MARK: Refresh
+
+    let now = Date(timeIntervalSince1970: 1_792_476_000)
+    let busOne = [Vehicle(id: "bus-1", label: "Bus 1")]
+
+    /// Signed in with a1 and r1, with no refresh due before the request.
+    var signedIn: StoredToken {
+        StoredToken(token: "a1", issuedAt: now.addingTimeInterval(-60), refreshToken: "r1", expiresAt: now.addingTimeInterval(840))
+    }
+
+    func refreshingClient(_ tokens: any TokenStoring, refresher: TokenRefresher? = nil) throws -> TrackerClient {
+        let now = now
+        return try TrackerClient(baseURL: base, tokens: tokens, refresher: refresher ?? TokenRefresher(tokens: tokens, now: { now }),
+                                 configuration: StubURLProtocol.configuration())
+    }
+
+    /// `/vehicles` takes only a2; `/auth/refresh` answers `refresh`.
+    func serve(refresh: (Int, String)) {
+        StubURLProtocol.reset { req in
+            if req.url!.path == "/api/v1/auth/refresh" { return (refresh.0, Data(refresh.1.utf8)) }
+            if req.value(forHTTPHeaderField: "Authorization") == "Bearer a2" {
+                return (200, Data(#"[{"id":"bus-1","label":"Bus 1"}]"#.utf8))
+            }
+            return (401, Data(#"{"error":"invalid token"}"#.utf8))
+        }
+    }
+
+    let renewedReply = (200, #"{"token":"a2","access_token":"a2","refresh_token":"r2","expires_in":900}"#)
+
+    var requests: [StubURLProtocol.Recorded] { StubURLProtocol.recorded.withLock { $0 } }
+
+    @Test func a401IsRefreshedAndTheRequestSentAgain() async throws {
+        serve(refresh: renewedReply)
+        let store = InMemoryTokenStore(signedIn)
+        #expect(try await refreshingClient(store).myVehicles() == busOne)
+
+        let sent = requests
+        try #require(sent.map(\.url.path) == ["/api/v1/vehicles", "/api/v1/auth/refresh", "/api/v1/vehicles"])
+        #expect(sent[0].headers["Authorization"] == "Bearer a1")
+        #expect(sent[1].method == "POST")
+        #expect(sent[1].headers["Authorization"] == nil)
+        #expect(sent[1].headers["Content-Type"] == "application/json")
+        #expect(try JSONSerialization.jsonObject(with: #require(sent[1].body)) as? [String: String] == ["refresh_token": "r1"])
+        #expect(sent[2].headers["Authorization"] == "Bearer a2")
+        #expect(try store.load() == StoredToken(token: "a2", issuedAt: now, refreshToken: "r2", expiresAt: now.addingTimeInterval(900)))
+    }
+
+    @Test func a401OnTheRetryIsNotRefreshedAgain() async throws {
+        StubURLProtocol.reset { req in
+            if req.url!.path == "/api/v1/auth/refresh" {
+                return (200, Data(#"{"access_token":"a2","refresh_token":"r2","expires_in":900}"#.utf8))
+            }
+            return (401, Data(#"{"error":"invalid token"}"#.utf8))
+        }
+        await #expect(throws: APIError.status(401, message: "invalid token")) {
+            try await refreshingClient(InMemoryTokenStore(signedIn)).myVehicles()
+        }
+        #expect(requests.map(\.url.path) == ["/api/v1/vehicles", "/api/v1/auth/refresh", "/api/v1/vehicles"])
+    }
+
+    @Test func aRefusedRefreshLetsTheOriginal401Through() async throws {
+        serve(refresh: (401, #"{"error":"invalid or expired refresh token"}"#))
+        let store = InMemoryTokenStore(signedIn)
+        await #expect(throws: APIError.status(401, message: "invalid token")) {
+            try await refreshingClient(store).myVehicles()
+        }
+        var dropped = signedIn
+        dropped.refreshToken = nil
+        #expect(try store.load() == dropped)
+    }
+
+    /// The reporter shows a transport error as No connection, which is
+    /// true enough: the session is still good, and the next report retries.
+    @Test(arguments: [500, 429])
+    func aRefreshTheServerCannotDoIsATransportError(status: Int) async throws {
+        serve(refresh: (status, #"{"error":"try later"}"#))
+        let store = InMemoryTokenStore(signedIn)
+        await #expect(throws: APIError.transport("refresh failed with HTTP \(status)")) {
+            try await refreshingClient(store).myVehicles()
+        }
+        #expect(try store.load() == signedIn)
+    }
+
+    @Test func aRefreshReplyThatIsNotATokenPairKeepsTheRefreshToken() async throws {
+        serve(refresh: (200, "<html>Sign in to the station Wi-Fi</html>"))
+        let store = InMemoryTokenStore(signedIn)
+        do {
+            _ = try await refreshingClient(store).myVehicles()
+            Issue.record("expected a transport error")
+        } catch APIError.transport {
+        } catch {
+            Issue.record("unexpected \(error)")
+        }
+        #expect(try store.load() == signedIn)
+    }
+
+    @Test func aWrongPasswordAtSignInNeverRefreshes() async throws {
+        StubURLProtocol.reset { _ in (401, Data(#"{"error":"invalid credentials"}"#.utf8)) }
+        await #expect(throws: APIError.status(401, message: "invalid credentials")) {
+            try await refreshingClient(InMemoryTokenStore(signedIn)).login(email: "d@test.com", password: "wrong")
+        }
+        #expect(requests.map(\.url.path) == ["/api/v1/auth/login"])
+    }
+
+    /// After a re-sign-in the trip's reporter and the pickers hold different
+    /// clients. Both must wait for the refresh that is already out, not start
+    /// their own: the stub would answer one, and it must not be asked.
+    @Test func clientsSharingARefresherWaitForTheRefreshThatIsOut() async throws {
+        serve(refresh: (200, #"{"access_token":"a9","refresh_token":"r9","expires_in":900}"#))
+        let store = ScriptedTokenStore(signedIn)
+        let now = now
+        let refresher = TokenRefresher(tokens: store, now: { now })
+        let held = ScriptedRefresh()
+        async let first = refresher.afterUnauthorized(failedToken: "a1", refresh: held.call)
+        #expect(await eventually { held.presented.count == 1 })
+
+        let reporterClient = try refreshingClient(store, refresher: refresher)
+        let pickerClient = try refreshingClient(store, refresher: refresher)
+        async let fromReporter = reporterClient.myVehicles()
+        async let fromPicker = pickerClient.myVehicles()
+        // One read for the refresh that is out, and two for each client: to
+        // send, then to ask the refresher after the 401.
+        #expect(await eventually { store.loads == 5 })
+        held.answer(.issued(AuthTokens(accessToken: "a2", refreshToken: "r2", expiresIn: 900)))
+
+        #expect(try await fromReporter == busOne)
+        #expect(try await fromPicker == busOne)
+        #expect(await first == .retry("a2"))
+        #expect(!requests.contains { $0.url.path == "/api/v1/auth/refresh" })
+        #expect(held.presented == ["r1"])
     }
 }

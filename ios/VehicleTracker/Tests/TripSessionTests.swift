@@ -43,9 +43,18 @@ import VehiclePositionsKit
         #expect(session().phase == .signedOut)
     }
 
-    @Test func staleTokenMeansSignedOut() throws {
-        try tokens.save(StoredToken(token: "old", issuedAt: clock.now.addingTimeInterval(-25 * 3600)))
+    @Test func anExpiredTokenWithNothingToRenewItMeansSignedOut() throws {
+        try tokens.save(StoredToken(token: "old", issuedAt: clock.now.addingTimeInterval(-3600),
+                                    expiresAt: clock.now.addingTimeInterval(-2700)))
+        defaults.set("https://positions.example.org", forKey: "serverURL")
         #expect(session().phase == .signedOut)
+    }
+
+    @Test func anExpiredTokenWithARefreshTokenSkipsLogin() throws {
+        try tokens.save(StoredToken(token: "old", issuedAt: clock.now.addingTimeInterval(-3600),
+                                    refreshToken: "refresh-1", expiresAt: clock.now.addingTimeInterval(-2700)))
+        defaults.set("https://positions.example.org", forKey: "serverURL")
+        #expect(session().phase == .idle)
     }
 
     @Test func freshTokenSkipsLogin() throws {
