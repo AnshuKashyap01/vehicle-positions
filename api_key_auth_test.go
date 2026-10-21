@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -223,4 +224,59 @@ func TestRequireAPIKey_LogsForwardedClientIP(t *testing.T) {
 			assert.Equal(t, tc.wantIP, entry["client_ip"])
 		})
 	}
+}
+
+// TestRequireAPIKey_ServesRecentKeyThroughDatabaseOutage is the outage the
+// grace period exists for: the positions are in memory, so a consumer whose
+// key validated a moment ago keeps getting the feed while Postgres is down.
+func TestRequireAPIKey_ServesRecentKeyThroughDatabaseOutage(t *testing.T) {
+	store := storeWithKey("good-key", true)
+	validated := newValidatedAPIKeys(time.Minute)
+	clock := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	validated.now = func() time.Time { return clock }
+	reached := false
+	handler := requireAPIKeyWith(store, false, validated)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+	}))
+	serve := func(key string) int {
+		reached = false
+		req := httptest.NewRequest(http.MethodGet, "/gtfs-rt/vehicle-positions", nil)
+		req.Header.Set(apiKeyHeader, key)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	require.Equal(t, http.StatusOK, serve("good-key"))
+
+	store.getErr = errors.New("dial tcp: connection refused")
+	clock = clock.Add(30 * time.Second)
+	assert.Equal(t, http.StatusOK, serve("good-key"), "validated 30s ago")
+	assert.True(t, reached)
+	assert.Equal(t, http.StatusInternalServerError, serve("never-seen-key"), "a key never validated is not let through")
+	assert.False(t, reached)
+
+	clock = clock.Add(time.Minute)
+	assert.Equal(t, http.StatusInternalServerError, serve("good-key"), "past the grace period")
+}
+
+// TestRequireAPIKey_RevokedKeyIsNotGracedThroughOutage: once the database
+// says a key is inactive, an outage straight after must not bring it back.
+func TestRequireAPIKey_RevokedKeyIsNotGracedThroughOutage(t *testing.T) {
+	store := storeWithKey("good-key", true)
+	validated := newValidatedAPIKeys(time.Hour)
+	handler := requireAPIKeyWith(store, false, validated)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	serve := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/gtfs-rt/vehicle-positions", nil)
+		req.Header.Set(apiKeyHeader, "good-key")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		return w.Code
+	}
+
+	require.Equal(t, http.StatusOK, serve())
+	store.key.Active = false
+	require.Equal(t, http.StatusUnauthorized, serve())
+	store.getErr = errors.New("dial tcp: connection refused")
+	assert.Equal(t, http.StatusInternalServerError, serve())
 }
