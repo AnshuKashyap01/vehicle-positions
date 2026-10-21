@@ -59,7 +59,8 @@ import VehiclePositionsKit
         try await s.signIn(serverURL: server, email: "d@test.com", password: "pw")
         #expect(s.phase == .idle)
         #expect(api.logins.count == 1)
-        #expect(try tokens.load()?.token == "jwt")
+        #expect(try tokens.load() == StoredToken(token: "jwt", issuedAt: clock.now, refreshToken: "refresh-1",
+                                                 expiresAt: clock.now.addingTimeInterval(900)))
         #expect(s.settings.serverURLString == "https://positions.example.org")
         #expect(s.settings.email == "d@test.com")
     }

@@ -91,8 +91,27 @@ nonisolated struct LoginRequest: Sendable, Encodable {
     var password: String
 }
 
-nonisolated struct LoginResponse: Sendable, Decodable {
-    var token: String
+/// What the server hands out at sign-in and at every refresh. The reply also
+/// carries `token`, a deprecated copy of `access_token` that is not read.
+nonisolated struct AuthTokens: Sendable, Decodable, Equatable {
+    var accessToken: String
+    var refreshToken: String
+    /// Seconds from the reply until `accessToken` expires.
+    var expiresIn: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+        case expiresIn = "expires_in"
+    }
+}
+
+nonisolated struct RefreshRequest: Sendable, Encodable {
+    var refreshToken: String
+
+    private enum CodingKeys: String, CodingKey {
+        case refreshToken = "refresh_token"
+    }
 }
 
 nonisolated struct StartTripRequest: Sendable, Encodable {

@@ -4,7 +4,7 @@ import Foundation
 /// A server that answers from canned values and records every call. Each
 /// endpoint's failure can be scripted by setting its error.
 @MainActor final class FakeTrackerAPI: TrackerAPI {
-    nonisolated(unsafe) var token = "jwt"
+    nonisolated(unsafe) var tokens = AuthTokens(accessToken: "jwt", refreshToken: "refresh-1", expiresIn: 900)
     nonisolated(unsafe) var vehicles: [Vehicle] = [Vehicle(id: "bus-1", label: "Bus 1")]
     nonisolated(unsafe) var routeList: [RouteInfo] = []
     nonisolated(unsafe) var page = RouteTripsPage(routeID: "R1", serviceDate: "20260902", timezone: "America/Los_Angeles", trips: [])
@@ -26,10 +26,10 @@ import Foundation
 
     nonisolated init() {}
 
-    func login(email: String, password: String) async throws -> String {
+    func login(email: String, password: String) async throws -> AuthTokens {
         logins.append((email, password))
         if let loginError { throw loginError }
-        return token
+        return tokens
     }
     func myVehicles() async throws -> [Vehicle] { vehicles }
     func routes() async throws -> [RouteInfo] { routeList }

@@ -16,9 +16,9 @@ import Testing
     }
 
     @Test func loginPostsCredentialsWithoutAToken() async throws {
-        StubURLProtocol.reset { _ in (200, Data(#"{"token":"jwt-1"}"#.utf8)) }
-        let token = try await client(token: nil).login(email: "d@test.com", password: "pw")
-        #expect(token == "jwt-1")
+        StubURLProtocol.reset { _ in (200, Data(#"{"token":"jwt-1","access_token":"jwt-1","refresh_token":"r-1","expires_in":900}"#.utf8)) }
+        let tokens = try await client(token: nil).login(email: "d@test.com", password: "pw")
+        #expect(tokens == AuthTokens(accessToken: "jwt-1", refreshToken: "r-1", expiresIn: 900))
         let r = try #require(StubURLProtocol.last)
         #expect(r.method == "POST")
         #expect(r.url.path == "/api/v1/auth/login")
@@ -26,6 +26,14 @@ import Testing
         #expect(r.headers["Content-Type"] == "application/json")
         let body = try JSONSerialization.jsonObject(with: r.body!) as! [String: String]
         #expect(body == ["email": "d@test.com", "password": "pw"])
+    }
+
+    /// `token` is the server's deprecated copy of `access_token`; the two
+    /// differ here so reading the wrong one shows.
+    @Test func loginReadsTheAccessTokenNotTheDeprecatedAlias() async throws {
+        StubURLProtocol.reset { _ in (200, Data(#"{"token":"alias","access_token":"a1","refresh_token":"r1","expires_in":120}"#.utf8)) }
+        let tokens = try await client(token: nil).login(email: "d@test.com", password: "pw")
+        #expect(tokens == AuthTokens(accessToken: "a1", refreshToken: "r1", expiresIn: 120))
     }
 
     @Test func vehiclesCarryTheBearerToken() async throws {

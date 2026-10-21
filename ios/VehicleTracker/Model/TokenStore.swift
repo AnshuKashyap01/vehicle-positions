@@ -1,15 +1,40 @@
 import Foundation
 import Security
 
-/// A driver JWT and when it was issued. The server's tokens live 24 hours and
-/// there is no refresh, so freshness is judged locally to skip the login
-/// screen (spec §5.2).
+/// The driver's access token (a JWT), when it was issued and expires, and the
+/// refresh token that renews it. `refreshToken` and `expiresAt` are nil for a
+/// token saved by a build that did not keep them.
 nonisolated struct StoredToken: Sendable, Codable, Equatable {
     var token: String
     var issuedAt: Date
+    var refreshToken: String? = nil
+    var expiresAt: Date? = nil
+
+    /// How long builds before refresh took a token to last. A token they saved
+    /// has no expiry and no refresh token, so it is held to the same 24 hours
+    /// from sign-in.
+    static let oldBuildLifetime: TimeInterval = 24 * 3600
+
+    /// Whether requests can go out without the driver signing in again: there
+    /// is a refresh token to renew the access token with, or time left on it.
+    /// A refresh token the server will refuse still counts until a request
+    /// finds that out and drops it.
+    func isSignedIn(now: Date) -> Bool {
+        refreshToken != nil || now < (expiresAt ?? issuedAt.addingTimeInterval(Self.oldBuildLifetime))
+    }
 
     func isFresh(now: Date, lifetime: TimeInterval = 24 * 3600) -> Bool {
         now.timeIntervalSince(issuedAt) < lifetime
+    }
+}
+
+extension StoredToken {
+    /// The tokens a sign-in or a refresh handed out, timed from `receivedAt`,
+    /// the moment the reply arrived. `expires_in` is relative, so a phone
+    /// clock that disagrees with the server's does not move the expiry.
+    nonisolated init(_ issued: AuthTokens, receivedAt: Date) {
+        self.init(token: issued.accessToken, issuedAt: receivedAt, refreshToken: issued.refreshToken,
+                  expiresAt: receivedAt.addingTimeInterval(TimeInterval(issued.expiresIn)))
     }
 }
 

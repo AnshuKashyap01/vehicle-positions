@@ -160,8 +160,8 @@ final class TripSession {
 
     func signIn(serverURL: URL, email: String, password: String) async throws {
         let api = try makeAPI(serverURL, tokens)
-        let token = try await api.login(email: email, password: password)
-        try tokens.save(StoredToken(token: token, issuedAt: now()))
+        let issued = try await api.login(email: email, password: password)
+        try tokens.save(StoredToken(issued, receivedAt: now()))
         settings.serverURLString = serverURL.absoluteString
         settings.email = email
         self.api = api

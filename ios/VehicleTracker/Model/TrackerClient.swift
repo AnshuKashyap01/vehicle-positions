@@ -27,9 +27,9 @@ nonisolated final class TrackerClient: TrackerAPI, Sendable {
         session.finishTasksAndInvalidate()
     }
 
-    func login(email: String, password: String) async throws -> String {
+    func login(email: String, password: String) async throws -> AuthTokens {
         let data = try await send("POST", "api/v1/auth/login", body: try encode(LoginRequest(email: email, password: password)), authorized: false)
-        return try decode(LoginResponse.self, data).token
+        return try decode(AuthTokens.self, data)
     }
 
     func myVehicles() async throws -> [Vehicle] {
