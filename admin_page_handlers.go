@@ -205,10 +205,9 @@ func (ui *adminUI) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		ui.renderLogin(w, http.StatusUnauthorized, "Invalid email or password.", email)
 		return
 	}
-	// Successful authentication: clear the per-email rate-limit window so
-	// legitimate repeat logins aren't counted toward the brute-force budget
-	// (mirrors handleLogin in auth.go).
-	ui.loginLimiter.ResetEmail(email)
+	// Successful authentication: legitimate logins aren't counted toward the
+	// brute-force budget (mirrors handleLogin in auth.go).
+	ui.loginLimiter.RecordSuccess(clientIP(r, ui.cfg.trustProxy), email)
 	if user.Role != roleAdmin {
 		ui.renderLogin(w, http.StatusForbidden, "Admin access required.", email)
 		return

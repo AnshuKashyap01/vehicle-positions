@@ -194,7 +194,7 @@ func TestNewHandler_PassesTheMapURLOn(t *testing.T) {
 	driverToken, err := generateJWT(&User{ID: 1, Email: "driver@test.com", Role: "driver"}, testSecret, defaultAccessTokenTTL)
 	require.NoError(t, err)
 	mapURL := testMapURL
-	h, err := newHandler(&noopStore{}, tracker, nil, loginLimiter, nil, testSecret, testTTLs, time.Now(),
+	h, err := newHandler(&noopStore{}, tracker, nil, loginLimiter, loginLimiter, nil, testSecret, testTTLs, time.Now(),
 		adminUIConfig{stalenessThreshold: 5 * time.Minute}, false, nil, nil, &mapURL)
 	require.NoError(t, err)
 

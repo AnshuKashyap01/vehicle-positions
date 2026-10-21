@@ -7,6 +7,10 @@ import (
 )
 
 const (
+	// loginIPLimit and loginEmailLimit bound the attempts a minute that did
+	// not succeed. A successful login hands its attempt back (RecordSuccess),
+	// so a shift change with dozens of drivers behind one depot or carrier
+	// NAT address is not refused for logging in correctly.
 	loginIPLimit     = 10
 	loginEmailLimit  = 5
 	loginWindow      = time.Minute
@@ -21,6 +25,8 @@ type loginWindowEntry struct {
 // LoginRateLimiter guards login endpoints with per-IP and per-email fixed
 // windows. Unlike VehicleRateLimiter it FAILS CLOSED at capacity — an auth
 // endpoint must not become unlimited under memory pressure (spec §4.11).
+// The driver API and the admin UI each get their own, so a burst of driver
+// logins cannot lock the dispatcher out of the admin sign-in.
 type LoginRateLimiter struct {
 	mu      sync.Mutex
 	byIP    map[string]*loginWindowEntry
@@ -58,16 +64,20 @@ func (l *LoginRateLimiter) Allow(ip, email string) bool {
 	return allowInWindow(l.byEmail, email, loginEmailLimit, now, "login")
 }
 
-// ResetEmail clears the per-email window after a successful authentication,
-// so an account legitimately signing in several times a minute (a shared
-// account, or the driver app plus the admin form) isn't 429'd despite zero
-// failed attempts. Only the email dimension is reset — an attacker can't
-// trigger it without valid credentials, and the per-IP budget (the
-// map-filling-DoS defense) is never relaxed.
-func (l *LoginRateLimiter) ResetEmail(email string) {
+// RecordSuccess is called after a successful authentication. It clears the
+// per-email window, so an account legitimately signing in several times a
+// minute (a shared account, or the driver app plus the admin form) isn't
+// 429'd despite zero failed attempts, and it hands the attempt Allow charged
+// back to the IP, so only failures use up an address's budget. Allow still
+// charges every attempt up front, which bounds the attempts in flight at
+// once. An attacker can't trigger either refund without valid credentials.
+func (l *LoginRateLimiter) RecordSuccess(ip, email string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	delete(l.byEmail, email)
+	if e, ok := l.byIP[ip]; ok && e.count > 0 {
+		e.count--
+	}
 }
 
 // allowInWindow is the fixed-window admission shared by the login, refresh and

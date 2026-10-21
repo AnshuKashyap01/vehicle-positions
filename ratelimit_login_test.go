@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoginRateLimiterPerIP(t *testing.T) {
@@ -83,4 +84,19 @@ func TestLoginRateLimiterEmailMapCapacityFailsClosed(t *testing.T) {
 	l.mu.Unlock()
 
 	assert.False(t, l.Allow("9.9.9.9", "newcomer@test.com"), "new email denied when byEmail is at capacity")
+}
+
+func TestLoginRateLimiterRecordSuccessRefundsIP(t *testing.T) {
+	l := NewLoginRateLimiter()
+	defer l.Stop()
+	ip := "1.2.3.4"
+	for i := range 3 * loginIPLimit {
+		email := fmt.Sprintf("driver%d@test.com", i)
+		require.True(t, l.Allow(ip, email), "attempt %d", i)
+		l.RecordSuccess(ip, email)
+	}
+	for i := range loginIPLimit {
+		assert.True(t, l.Allow(ip, fmt.Sprintf("typo%d@test.com", i)), "failure %d", i)
+	}
+	assert.False(t, l.Allow(ip, "one-too-many@test.com"), "failures alone still exhaust the address")
 }

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1031,4 +1032,31 @@ func TestLoginLogoutRevokeFlow(t *testing.T) {
 	after := call()
 	assert.Equal(t, http.StatusUnauthorized, after.Code, "the same token must now be rejected")
 	assert.Equal(t, "invalid token", errorBody(t, after))
+}
+
+// TestHandleLogin_SuccessesDoNotUseIPBudget replays a shift start: thirty
+// drivers behind one depot address all log in correctly within a minute. Only
+// failed attempts may count toward the per-IP limit.
+func TestHandleLogin_SuccessesDoNotUseIPBudget(t *testing.T) {
+	store := &mockUserStore{user: &User{
+		ID:           1,
+		Email:        "driver@test.com",
+		PasswordHash: "$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi",
+		Role:         "driver",
+		Active:       true,
+	}}
+	limiter := NewLoginRateLimiter()
+	defer limiter.Stop()
+	handler := handleLogin(store, newFakeRefreshTokens(), testSecret, testTTLs, limiter, false)
+
+	for i := range 30 {
+		w := postLogin(handler, "driver@test.com", "password")
+		require.Equal(t, http.StatusOK, w.Code, "successful login %d from one address was refused", i+1)
+	}
+
+	// Failures still count: the address is refused once they reach the limit.
+	for i := range loginIPLimit {
+		limiter.Allow("192.0.2.1", "nobody-"+strconv.Itoa(i)+"@test.com")
+	}
+	assert.False(t, limiter.Allow("192.0.2.1", "next@test.com"))
 }
