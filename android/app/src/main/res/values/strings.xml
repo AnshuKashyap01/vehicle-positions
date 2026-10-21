@@ -11,50 +11,94 @@
     <string name="login_error_invalid_credentials">Invalid email or password.</string>
     <string name="login_error_network">Could not reach the server. Check your connection.</string>
 
+    <!-- The top of the route and run steps: Back, then the trip so far as chips, each going back to its step. -->
+    <string name="setup_navigate_up">Navigate up</string>
+    <string name="setup_trip_so_far">Trip so far</string>
+    <!-- Read before the bus's number on its chip, e.g. "Bus, 4317". -->
+    <string name="setup_bus">Bus</string>
+    <!-- The route's chip, read out, e.g. "Route 7". -->
+    <string name="setup_route">Route %1$s</string>
+    <!-- After the chips: the step the driver is on. -->
+    <string name="setup_step_route">Route</string>
+    <string name="setup_step_run">Run</string>
+
+    <!-- In a setup screen's search field, once something is typed. -->
+    <string name="setup_clear_search">Clear search</string>
+
     <!-- Vehicle selection screen -->
-    <string name="vehicles_title">Select a Vehicle</string>
-    <string name="vehicles_empty">No vehicles are assigned to you.</string>
-    <string name="vehicles_error_message">Could not load your vehicles.</string>
-    <string name="vehicles_retry_button">Retry</string>
-    <string name="vehicles_search_label">Search vehicles</string>
-    <string name="vehicles_search_no_matches">No vehicles match your search.</string>
+    <string name="vehicles_title">Choose your bus</string>
+    <string name="vehicles_empty">No buses are assigned to you</string>
+    <string name="vehicles_empty_detail">Ask your dispatcher to assign one, then check again.</string>
+    <string name="vehicles_check_again">Check again</string>
+    <string name="vehicles_error_message">Couldn\'t load your buses</string>
+    <string name="vehicles_error_detail">Check your connection and try again.</string>
+    <string name="vehicles_retry_button">Try again</string>
+    <string name="vehicles_search_label">Bus number</string>
+    <!-- What the driver typed, e.g. "No bus matches 999". -->
+    <string name="vehicles_search_no_matches">No bus matches %1$s</string>
+    <string name="vehicles_search_no_matches_detail">Check the fleet number on the bus.</string>
+    <string name="vehicles_section_favorites">Favorites</string>
+    <string name="vehicles_section_recent">Recent</string>
+    <string name="vehicles_section_all">All buses</string>
+    <string name="vehicles_section_matches">Matches</string>
+    <!-- How TalkBack describes a starred bus's tile, e.g. "4317, Bus 4317, Favorite". -->
+    <string name="vehicles_tile_favorite">Favorite</string>
     <string name="vehicles_favorite_description">Add %1$s to favorites</string>
     <string name="vehicles_unfavorite_description">Remove %1$s from favorites</string>
 
     <!-- Route picker -->
-    <string name="routes_title">Select a Route</string>
+    <string name="routes_title">Choose a route</string>
     <string name="routes_search_label">Route number or name</string>
     <string name="routes_section_recent">Recent</string>
     <string name="routes_section_all">All routes</string>
+    <!-- Over a grid of route numbers, from a feed that names none of its routes: how many there are. -->
+    <plurals name="routes_section_all_count">
+        <item quantity="one">All routes · %1$d</item>
+        <item quantity="other">All routes · %1$d</item>
+    </plurals>
     <string name="routes_section_matches">Matches</string>
-    <string name="routes_search_no_matches">No routes match your search.</string>
-    <string name="routes_empty">The schedule has no routes.</string>
-    <string name="routes_error_message">Could not load the routes.</string>
-    <string name="routes_no_schedule">This server has no schedule loaded, so there are no routes to start a trip on.</string>
-    <string name="routes_retry_button">Retry</string>
+    <!-- What the driver typed, e.g. "No route matches 999". -->
+    <string name="routes_search_no_matches">No route matches %1$s</string>
+    <string name="routes_search_no_matches_detail">Search by the number on the sign, or part of the name.</string>
+    <string name="routes_empty">The schedule has no routes</string>
+    <string name="routes_empty_detail">Ask your agency\'s admin to check the schedule.</string>
+    <string name="routes_check_again">Check again</string>
+    <string name="routes_error_message">Couldn\'t load the routes</string>
+    <string name="routes_error_detail">Check your connection and try again.</string>
+    <string name="routes_no_schedule">No schedule on this server yet</string>
+    <string name="routes_no_schedule_detail">An operator has to load one before trips can start. Tell your agency\'s admin.</string>
+    <string name="routes_retry_button">Try again</string>
     <!-- Stands in for a route whose feed gave no short name. -->
     <string name="routes_badge_placeholder">\u2014</string>
 
     <!-- Run picker -->
-    <string name="runs_title">Select a Run</string>
-    <string name="runs_empty">No runs on this route today.</string>
+    <string name="runs_title">Choose a run</string>
+    <!-- The route's number, e.g. "No runs on route 7 today". -->
+    <string name="runs_empty">No runs on route %1$s today</string>
+    <string name="runs_empty_detail">Pick another route, or check again tomorrow.</string>
+    <string name="runs_choose_another_route">Choose another route</string>
+    <!-- On the run under way or next to start, and, for TalkBack, on the line between the runs gone and the rest. -->
     <string name="runs_badge_now">Now</string>
     <string name="runs_badge_next">Next</string>
-    <!-- Start time, then where the run is headed. -->
-    <string name="runs_row_headsign">%1$s \u2192 %2$s</string>
-    <!-- First stop, then last stop. -->
+    <!-- The direction switch: where most runs that way are headed, e.g. "To Downtown Seattle". -->
+    <string name="runs_direction">To %1$s</string>
+    <!-- Under the date: the first stop, then the last stop, of the direction shown. -->
     <string name="runs_row_stops">%1$s \u2192 %2$s</string>
+    <!-- What TalkBack says on the run being started. -->
     <string name="runs_starting">Starting\u2026</string>
-    <string name="runs_error_message">Could not load this route\'s runs.</string>
-    <string name="runs_retry_button">Retry</string>
-    <string name="runs_error_not_assigned">You are not assigned to this vehicle.</string>
-    <string name="runs_error_trip_active">You already have an active trip.</string>
+    <string name="runs_error_message">Couldn\'t load the runs</string>
+    <string name="runs_error_detail">Check your connection and try again.</string>
+    <string name="runs_retry_button">Try again</string>
+    <!-- The bus the driver chose, e.g. "You're not assigned to bus 4317." -->
+    <string name="runs_error_not_assigned">You\'re not assigned to bus %1$s.</string>
+    <string name="runs_change_bus">Change bus</string>
+    <string name="runs_error_trip_active">You already have a trip running. End it before starting another.</string>
     <string name="runs_error_previous_trip_not_ended">Your previous trip could not be ended yet. Check your connection and try again.</string>
-    <string name="runs_error_network">Could not reach the server. Check your connection.</string>
-    <string name="runs_error_no_geometry">This run has no shape or stops to follow.</string>
-    <string name="runs_error_trip_not_active">The schedule has moved on to a new day since this list was loaded. Reload it to pick a run.</string>
+    <string name="runs_error_network">Can\'t reach the server. Check your connection.</string>
+    <string name="runs_error_no_geometry">This run has no route or stops to follow. Pick another run.</string>
+    <string name="runs_error_trip_not_active">The schedule moved on to a new day.</string>
     <string name="runs_reload_button">Reload</string>
-    <string name="runs_error_other">Could not start the trip.</string>
+    <string name="runs_error_other">Couldn\'t start the trip.</string>
 
     <!-- Tracking screen -->
     <!-- The tracking notification's text. The screen says the same things in its own words, below. -->

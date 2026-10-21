@@ -135,6 +135,21 @@ class ThemeContrastTest {
         }
     }
 
+    @Test fun `an attention banner reads, and its icon stands out`() {
+        for (theme in themes) {
+            val banner = theme.problems.attentionContainer
+            assertContrast(4.5f, "${theme.name} banner text", theme.scheme.onSurface, banner)
+            assertContrast(3f, "${theme.name} banner icon", theme.problems.iconOnSurface, banner)
+        }
+    }
+
+    /** The design's own star, #F9AB00, is 1.7:1 on the light tile, so a favourite's star is the problem icon's amber. */
+    @Test fun `a favourite's star stands out on its tile`() {
+        for (theme in themes) {
+            assertContrast(3f, "${theme.name} star on surfaceContainer", theme.problems.iconOnSurface, theme.scheme.surfaceContainer)
+        }
+    }
+
     @Test fun `the signed out card reads, and its button stands out`() {
         for (theme in themes) {
             val card = theme.problems.signedOut

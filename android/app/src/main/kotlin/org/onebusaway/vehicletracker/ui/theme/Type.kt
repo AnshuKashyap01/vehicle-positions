@@ -47,7 +47,7 @@ internal val AppTypography = Typography(
     labelSmall = base.labelSmall.inAppFont(),
 )
 
-// The design's three sizes that Material has no role for, read like the others: MaterialTheme.typography.statusHero.
+// The design's styles that Material has no role for, read like the others: MaterialTheme.typography.statusHero.
 
 /** The status card's answer, "On time" or "6 min late". The card shrinks it to 28 sp rather than wrap it. */
 internal val Typography.statusHero: TextStyle
@@ -60,3 +60,11 @@ internal val Typography.statusLine: TextStyle
 /** The trip's headsign on the trip bar, and the next stop's name on the status card. */
 internal val Typography.tripTitle: TextStyle
     get() = titleMedium.copy(fontSize = 18.sp, lineHeight = 24.sp)
+
+/** A bus's fleet number, big on its tile, which is what the driver reads off the bus. */
+internal val Typography.fleetNumber: TextStyle
+    get() = headlineLarge.copy(fontWeight = FontWeight.Medium)
+
+/** A run's start time on the departure board. */
+internal val Typography.departureTime: TextStyle
+    get() = headlineSmall.copy(fontWeight = FontWeight.Medium)

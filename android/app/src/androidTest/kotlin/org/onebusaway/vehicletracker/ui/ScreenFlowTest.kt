@@ -9,11 +9,14 @@ import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -23,22 +26,32 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isDisplayed
+import androidx.compose.ui.test.isSelectable
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
@@ -51,21 +64,41 @@ import org.onebusaway.vehicletracker.R
 import org.onebusaway.vehicletracker.data.ActiveTrip
 import org.onebusaway.vehicletracker.data.TrackingProblem
 import org.onebusaway.vehicletracker.data.TrackingState
+import org.onebusaway.vehicletracker.data.api.VehicleDto
 import org.onebusaway.vehicletracker.engine.AdherenceEvaluator
 import org.onebusaway.vehicletracker.engine.AdherenceThresholds
 import org.onebusaway.vehicletracker.engine.GeoPoint
 import org.onebusaway.vehicletracker.engine.TripGeometry
 import org.onebusaway.vehicletracker.engine.TripStop
 import org.onebusaway.vehicletracker.service.LocationFix
+import org.onebusaway.vehicletracker.ui.components.SPINNER_DELAY_MS
 import org.onebusaway.vehicletracker.ui.login.LoginScreenContent
 import org.onebusaway.vehicletracker.ui.login.LoginUiState
 import org.onebusaway.vehicletracker.ui.resume.ResumeShiftScreenContent
 import org.onebusaway.vehicletracker.ui.resume.ResumeShiftUiState
+import org.onebusaway.vehicletracker.ui.routes.RouteBadgeModel
+import org.onebusaway.vehicletracker.ui.routes.RouteItem
+import org.onebusaway.vehicletracker.ui.routes.RoutesScreenContent
+import org.onebusaway.vehicletracker.ui.routes.RoutesUiState
+import org.onebusaway.vehicletracker.ui.runs.Board
+import org.onebusaway.vehicletracker.ui.runs.BoardRun
+import org.onebusaway.vehicletracker.ui.runs.RunDirection
+import org.onebusaway.vehicletracker.ui.runs.RunHighlight
+import org.onebusaway.vehicletracker.ui.runs.RunPage
+import org.onebusaway.vehicletracker.ui.runs.RunsScreenContent
+import org.onebusaway.vehicletracker.ui.runs.RunsUiState
+import org.onebusaway.vehicletracker.ui.runs.TripError
+import org.onebusaway.vehicletracker.ui.runs.TripRun
 import org.onebusaway.vehicletracker.ui.tracking.StatusArea
 import org.onebusaway.vehicletracker.ui.tracking.TrackingScreenContent
 import org.onebusaway.vehicletracker.ui.tracking.TrackingUiState
 import org.onebusaway.vehicletracker.ui.tracking.TripPanel
 import org.onebusaway.vehicletracker.ui.tracking.statusCardModel
+import org.onebusaway.vehicletracker.ui.vehicles.BusGroup
+import org.onebusaway.vehicletracker.ui.vehicles.BusSection
+import org.onebusaway.vehicletracker.ui.vehicles.BusTile
+import org.onebusaway.vehicletracker.ui.vehicles.VehicleScreenContent
+import org.onebusaway.vehicletracker.ui.vehicles.VehiclesUiState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -664,5 +697,443 @@ class ScreenFlowTest {
         compose.onNodeWithText(getString(R.string.tracking_adherence_waiting_for_gps)).assertDoesNotExist()
         compose.onNodeWithText(getString(R.string.tracking_reauth_button)).performClick()
         assertTrue(signInClicked)
+    }
+
+    // --- The bus step ---
+
+    private fun getString(resId: Int, vararg args: Any): String =
+        InstrumentationRegistry.getInstrumentation().targetContext.getString(resId, *args)
+
+    private val heading = SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading)
+
+    private val buses = listOf(VehicleDto("4317", "Bus 4317"), VehicleDto("4322", "Bus 4322"), VehicleDto("4318", "4318"))
+    private val busGroups = listOf(
+        BusGroup(BusSection.FAVORITES, listOf(BusTile("4317", "Bus 4317", favorite = true))),
+        BusGroup(BusSection.RECENT, listOf(BusTile("4322", "Bus 4322", favorite = false))),
+        BusGroup(BusSection.ALL, listOf(BusTile("4318", null, favorite = false))),
+    )
+
+    private fun showBuses(
+        state: VehiclesUiState,
+        onVehicleClick: (String) -> Unit = {},
+        onToggleFavorite: (String) -> Unit = {},
+        onRetry: () -> Unit = {},
+    ) {
+        compose.setContent { VehicleScreenContent(state, onVehicleClick, onQueryChange = {}, onToggleFavorite, onRetry) }
+    }
+
+    private fun top(node: SemanticsNodeInteraction) = node.getBoundsInRoot().top
+
+    @Test
+    fun busScreen_listsTilesUnderTheirSectionsAndOpensTheOneTapped() {
+        var opened: String? = null
+        showBuses(VehiclesUiState.Loaded(buses, "", busGroups), onVehicleClick = { opened = it })
+
+        compose.onNode(hasText(getString(R.string.vehicles_title)) and heading).assertIsDisplayed()
+        val order = listOf(
+            compose.onNode(hasText(getString(R.string.vehicles_section_favorites)) and heading),
+            compose.onNode(hasText("4317") and hasClickAction()),
+            compose.onNode(hasText(getString(R.string.vehicles_section_recent)) and heading),
+            compose.onNode(hasText("4322") and hasClickAction()),
+            compose.onNode(hasText(getString(R.string.vehicles_section_all)) and heading),
+            compose.onNode(hasText("4318") and hasClickAction()),
+        ).map { top(it) }
+        assertEquals("each tile sits under its own section", order.sorted(), order)
+
+        // One button, read as "4317, Bus 4317, Favorite".
+        compose.onNode(
+            hasText("4317") and hasText("Bus 4317") and
+                SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button) and
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, getString(R.string.vehicles_tile_favorite)),
+        ).performClick()
+        assertEquals("4317", opened)
+    }
+
+    @Test
+    fun busScreen_starSaysWhatItDoesAndTogglesOnlyItsBus() {
+        var opened: String? = null
+        var toggled: String? = null
+        showBuses(VehiclesUiState.Loaded(buses, "", busGroups), onVehicleClick = { opened = it }, onToggleFavorite = { toggled = it })
+
+        compose.onNodeWithContentDescription(getString(R.string.vehicles_unfavorite_description, "4317")).assertIsDisplayed()
+        compose.onNodeWithContentDescription(getString(R.string.vehicles_favorite_description, "4322")).performClick()
+        assertEquals("4322", toggled)
+        assertEquals(null, opened)
+    }
+
+    @Test
+    fun busScreen_saysWhenNoBusMatchesTheSearch() {
+        showBuses(VehiclesUiState.Loaded(buses, "999", emptyList()))
+
+        compose.onNode(hasText(getString(R.string.vehicles_search_no_matches, "999")) and heading).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_search_no_matches_detail)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(getString(R.string.setup_clear_search)).assertIsDisplayed()
+    }
+
+    @Test
+    fun busScreen_checksAgainWhenNoBusIsAssigned() {
+        var reloads = 0
+        showBuses(VehiclesUiState.Loaded(emptyList(), "", emptyList()), onRetry = { reloads++ })
+
+        compose.onNodeWithText(getString(R.string.vehicles_empty)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_empty_detail)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_check_again)).performClick()
+        assertEquals(1, reloads)
+    }
+
+    @Test
+    fun busScreen_triesAgainAfterAFailedLoad() {
+        var reloads = 0
+        showBuses(VehiclesUiState.Error(retry = true), onRetry = { reloads++ })
+
+        compose.onNodeWithText(getString(R.string.vehicles_error_message)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_error_detail)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_retry_button)).performClick()
+        assertEquals(1, reloads)
+    }
+
+    @Test
+    fun busScreen_offersNothingToTryWhenSignedOut() {
+        showBuses(VehiclesUiState.Error(retry = false))
+
+        compose.onNodeWithText(getString(R.string.vehicles_error_message)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.vehicles_error_detail)).assertDoesNotExist()
+        compose.onNodeWithText(getString(R.string.vehicles_retry_button)).assertDoesNotExist()
+    }
+
+    @Test
+    fun busScreen_showsTheSpinnerOnlyOnceTheLoadIsSlow() {
+        val spinner = SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo.Indeterminate)
+        compose.mainClock.autoAdvance = false
+        showBuses(VehiclesUiState.Loading)
+
+        compose.mainClock.advanceTimeBy(SPINNER_DELAY_MS / 2)
+        compose.onNode(spinner).assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(SPINNER_DELAY_MS)
+        compose.onNode(spinner).assertExists()
+    }
+
+    // --- The route step ---
+
+    private fun route(id: String, short: String, longName: String = "") =
+        RouteItem(id, RouteBadgeModel.of(short, "FDB71A", "000000"), longName)
+
+    private val namedRoutes = listOf(
+        route("R7", "7", "Rainier Beach - Downtown Seattle"),
+        route("R8", "8", "Rainier Beach - Seattle Center"),
+        route("R36", "36", "Beacon Hill - Downtown Seattle"),
+    )
+    private val numberedRoutes = listOf("1", "2", "3", "4", "5", "7").map { route("R$it", it) }
+
+    private fun showRoutes(state: RoutesUiState, onRouteClick: (String) -> Unit = {}, onRetry: () -> Unit = {}) {
+        compose.setContent { RoutesScreenContent(state, "4317", {}, {}, { onRouteClick(it.id) }, onQueryChange = {}, onRetry) }
+    }
+
+    @Test
+    fun routesScreen_listsRecentBadgesThenEveryRouteAsARowWithItsName() {
+        var opened: String? = null
+        showRoutes(
+            RoutesUiState.Loaded(namedRoutes, namedRoutes, recent = listOf(namedRoutes[2]), query = "", grid = false),
+            onRouteClick = { opened = it },
+        )
+
+        compose.onNode(hasText(getString(R.string.routes_title)) and heading).assertIsDisplayed()
+        val recentLabel = top(compose.onNode(hasText(getString(R.string.routes_section_recent)) and heading))
+        val recentBadge = top(compose.onNodeWithContentDescription(getString(R.string.setup_route, "36")))
+        val allLabel = top(compose.onNode(hasText(getString(R.string.routes_section_all)) and heading))
+        assertTrue("the recent badge sits between its label and All routes", recentLabel < recentBadge && recentBadge < allLabel)
+
+        // A row is one button with the route's number and name.
+        compose.onNode(hasText("8") and hasText("Rainier Beach - Seattle Center") and hasClickAction()).performClick()
+        assertEquals("R8", opened)
+        compose.onNodeWithContentDescription(getString(R.string.setup_route, "36")).performClick()
+        assertEquals("R36", opened)
+    }
+
+    @Test
+    fun routesScreen_showsAGridOfBadgesWhenTheFeedNamesNoRoute() {
+        var opened: String? = null
+        showRoutes(RoutesUiState.Loaded(numberedRoutes, numberedRoutes, emptyList(), "", grid = true), onRouteClick = { opened = it })
+
+        val count = InstrumentationRegistry.getInstrumentation().targetContext.resources
+            .getQuantityString(R.plurals.routes_section_all_count, numberedRoutes.size, numberedRoutes.size)
+        compose.onNode(hasText(count) and heading).assertIsDisplayed()
+        // Four to a row: the first four badges line up, and the fifth starts the next row.
+        val tops = listOf("1", "2", "3", "4", "5").map { top(compose.onNodeWithContentDescription(getString(R.string.setup_route, it))) }
+        assertEquals(1, tops.take(4).distinct().size)
+        assertTrue(tops[4] > tops[0])
+
+        compose.onNodeWithContentDescription(getString(R.string.setup_route, "7")).performClick()
+        assertEquals("R7", opened)
+    }
+
+    @Test
+    fun routesScreen_saysWhenNoRouteMatchesTheSearch() {
+        showRoutes(RoutesUiState.Loaded(namedRoutes, emptyList(), emptyList(), "999", grid = false))
+
+        compose.onNode(hasText(getString(R.string.routes_search_no_matches, "999")) and heading).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_search_no_matches_detail)).assertIsDisplayed()
+    }
+
+    @Test
+    fun routesScreen_checksAgainWhenTheScheduleHasNoRoutes() {
+        var reloads = 0
+        showRoutes(RoutesUiState.Loaded(emptyList(), emptyList(), emptyList(), "", grid = true), onRetry = { reloads++ })
+
+        compose.onNodeWithText(getString(R.string.routes_empty)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_empty_detail)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_check_again)).performClick()
+        assertEquals(1, reloads)
+    }
+
+    @Test
+    fun routesScreen_saysWhoToTellWhenTheServerHasNoSchedule() {
+        showRoutes(RoutesUiState.NoSchedule)
+
+        compose.onNodeWithText(getString(R.string.routes_no_schedule)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_no_schedule_detail)).assertIsDisplayed()
+        // Only an operator can load a schedule: there is nothing to try again.
+        compose.onNodeWithText(getString(R.string.routes_retry_button)).assertDoesNotExist()
+        compose.onNodeWithText(getString(R.string.routes_check_again)).assertDoesNotExist()
+    }
+
+    @Test
+    fun routesScreen_triesAgainAfterAFailedLoadButNotWhenSignedOut() {
+        var reloads = 0
+        var state by mutableStateOf<RoutesUiState>(RoutesUiState.Error(retry = true))
+        compose.setContent { RoutesScreenContent(state, "4317", {}, {}, onRouteClick = {}, onQueryChange = {}, onRetry = { reloads++ }) }
+
+        compose.onNodeWithText(getString(R.string.routes_error_detail)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_retry_button)).performClick()
+        assertEquals(1, reloads)
+
+        state = RoutesUiState.Error(retry = false)
+        compose.onNodeWithText(getString(R.string.routes_error_message)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.routes_retry_button)).assertDoesNotExist()
+    }
+
+    // --- The run step ---
+
+    private val badge7 = RouteBadgeModel.of("7", "FDB71A", "000000")
+
+    /** Twenty inbound runs, every quarter hour from 5:00, the ninth under way. */
+    private val inbound = (0 until 20).map { n ->
+        BoardRun("in$n", "%d:%02d".format(5 + n / 4, n % 4 * 15), "Downtown Seattle", past = n < 8, highlight = if (n == 8) RunHighlight.NOW else null)
+    }
+    private val outbound = (0 until 3).map { n ->
+        BoardRun("out$n", "6:%02d".format(5 + n * 20), "Mount Baker", past = false, highlight = if (n == 0) RunHighlight.NEXT else null)
+    }
+    private val inboundBoard = Board(RunDirection(0, "Downtown Seattle", "Mount Baker TC", "4th Ave & Pine St"), inbound, nowAt = 8, openAt = 7)
+    private val outboundBoard = Board(RunDirection(1, "Mount Baker", "4th Ave & Pine St", "Mount Baker TC"), outbound, nowAt = null, openAt = 0)
+    private val runPage = RunPage("20261008", ZoneId.of("America/Los_Angeles"), emptyList())
+
+    private fun board(error: TripError? = null, startingRunId: String? = null, boards: List<Board> = listOf(inboundBoard, outboundBoard)) =
+        RunsUiState.Loaded(runPage.copy(runs = listOf(t1Run)), boards, startBoard = 0, startingRunId = startingRunId, error = error)
+
+    // Only its being there matters to the screen, which draws the boards.
+    private val t1Run = TripRun("in0", "Downtown Seattle", 0, "A", "B", Instant.EPOCH, Instant.EPOCH)
+
+    private class RunCalls {
+        var tapped: String? = null
+        var reloads = 0
+        var triesAgain = 0
+        var changeBus = 0
+        var anotherRoute = 0
+    }
+
+    private fun showRuns(state: RunsUiState): RunCalls {
+        val calls = RunCalls()
+        compose.setContent {
+            RunsScreenContent(
+                state = state,
+                route = badge7,
+                vehicleId = "4317",
+                onBack = {},
+                onBusClick = {},
+                onRouteClick = {},
+                onRunClick = { calls.tapped = it },
+                onReload = { calls.reloads++ },
+                onTryAgain = { calls.triesAgain++ },
+                onChangeBus = { calls.changeBus++ },
+                onChooseAnotherRoute = { calls.anotherRoute++ },
+            )
+        }
+        return calls
+    }
+
+    @Test
+    fun runsScreen_opensAtTheRunJustGoneWithTheLineAndTheNowRunUnderIt() {
+        val calls = showRuns(board())
+
+        compose.onNode(hasText(getString(R.string.runs_title)) and heading).assertIsDisplayed()
+        compose.onNode(hasText(getString(R.string.runs_row_stops, "Mount Baker TC", "4th Ave & Pine St"))).assertIsDisplayed()
+        // Already there, not scrolled to: the first run of the day was never drawn.
+        compose.onNodeWithText("5:00").assertDoesNotExist()
+        val gone = top(compose.onNodeWithText("6:45"))
+        val line = top(compose.onNodeWithContentDescription(getString(R.string.runs_badge_now)))
+        val now = top(compose.onNode(hasText("7:00") and hasText(getString(R.string.runs_badge_now)) and hasClickAction()))
+        assertTrue("the run just gone, then the line, then the run under way", gone < line && line < now)
+
+        compose.onNode(hasText("7:00") and hasClickAction()).performClick()
+        assertEquals("in8", calls.tapped)
+    }
+
+    @Test
+    fun runsScreen_switchesDirectionAndKeepsEachOnesPlace() {
+        showRuns(board())
+
+        compose.onNode(hasText(getString(R.string.runs_direction, "Downtown Seattle")) and isSelectable()).assertIsSelected()
+        compose.onNode(hasText(getString(R.string.runs_direction, "Mount Baker")) and isSelectable()).performClick()
+        compose.onNode(hasText("6:05") and hasText(getString(R.string.runs_badge_next))).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.runs_row_stops, "4th Ave & Pine St", "Mount Baker TC")).assertIsDisplayed()
+        compose.onNodeWithText("7:00").assertDoesNotExist()
+
+        compose.onNode(hasText(getString(R.string.runs_direction, "Downtown Seattle")) and isSelectable()).performClick()
+        compose.onNode(hasText("7:00") and hasClickAction()).assertIsDisplayed()
+        compose.onNodeWithText("5:00").assertDoesNotExist()
+    }
+
+    @Test
+    fun runsScreen_hasNoSwitchWhenTheRunsHaveNoDirections() {
+        showRuns(board(boards = listOf(inboundBoard.copy(direction = null))))
+
+        compose.onNode(isSelectable()).assertDoesNotExist()
+        compose.onNode(hasText("7:00") and hasClickAction()).assertIsDisplayed()
+    }
+
+    @Test
+    fun runsScreen_marksTheRunBeingStartedAndIgnoresTapsMeanwhile() {
+        val calls = showRuns(board(startingRunId = "in8"))
+
+        // TalkBack reads the run and that it is starting, once, as the row appears.
+        compose.onNode(
+            hasText("7:00") and
+                SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, getString(R.string.runs_starting)) and
+                SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+        ).assertIsDisplayed()
+        compose.onNode(hasText("7:15") and hasClickAction()).assertIsNotEnabled().performClick()
+        assertEquals(null, calls.tapped)
+    }
+
+    @Test
+    fun runsScreen_eachRefusalOffersTheActionThatFixesIt() {
+        var state by mutableStateOf(board(error = TripError.NOT_ASSIGNED))
+        val calls = RunCalls()
+        compose.setContent {
+            RunsScreenContent(
+                state, badge7, "4317", onBack = {}, onBusClick = {}, onRouteClick = {},
+                onRunClick = {}, onReload = { calls.reloads++ }, onTryAgain = { calls.triesAgain++ },
+                onChangeBus = { calls.changeBus++ }, onChooseAnotherRoute = {},
+            )
+        }
+
+        compose.onNode(hasText(getString(R.string.runs_error_not_assigned, "4317")) and announcedPolitely, useUnmergedTree = false)
+            .assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.runs_change_bus)).performClick()
+        assertEquals(1, calls.changeBus)
+
+        state = board(error = TripError.NETWORK)
+        compose.onNodeWithText(getString(R.string.runs_retry_button)).performClick()
+        assertEquals(1, calls.triesAgain)
+
+        state = board(error = TripError.TRIP_NOT_ACTIVE)
+        compose.onNodeWithText(getString(R.string.runs_reload_button)).performClick()
+        assertEquals(1, calls.reloads)
+
+        state = board(error = TripError.TRIP_ACTIVE)
+        compose.onNodeWithText(getString(R.string.runs_error_trip_active)).assertIsDisplayed()
+        for (action in listOf(R.string.runs_change_bus, R.string.runs_retry_button, R.string.runs_reload_button)) {
+            compose.onNodeWithText(getString(action)).assertDoesNotExist()
+        }
+    }
+
+    @Test
+    fun runsScreen_offersAnotherRouteWhenThisOneHasNoRunsToday() {
+        val calls = showRuns(RunsUiState.Loaded(runPage, listOf(Board(null, emptyList(), null, 0)), 0, null, null))
+
+        compose.onNode(hasText(getString(R.string.runs_empty, "7")) and heading).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.runs_choose_another_route)).performClick()
+        assertEquals(1, calls.anotherRoute)
+    }
+
+    @Test
+    fun runsScreen_triesAgainAfterAFailedLoadButNotWhenSignedOut() {
+        var state by mutableStateOf<RunsUiState>(RunsUiState.Error(retry = true))
+        var reloads = 0
+        compose.setContent {
+            RunsScreenContent(
+                state, badge7, "4317", onBack = {}, onBusClick = {}, onRouteClick = {},
+                onRunClick = {}, onReload = { reloads++ }, onTryAgain = {}, onChangeBus = {}, onChooseAnotherRoute = {},
+            )
+        }
+
+        compose.onNodeWithText(getString(R.string.runs_error_detail)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.runs_retry_button)).performClick()
+        assertEquals(1, reloads)
+
+        state = RunsUiState.Error(retry = false)
+        compose.onNodeWithText(getString(R.string.runs_error_message)).assertIsDisplayed()
+        compose.onNodeWithText(getString(R.string.runs_retry_button)).assertDoesNotExist()
+    }
+
+    // --- The header over the route and run steps ---
+
+    @Test
+    fun setupHeader_eachChipGoesBackToItsStep() {
+        var back = 0
+        var bus = 0
+        var routeStep = 0
+        compose.setContent {
+            RunsScreenContent(
+                board(), badge7, "4317", onBack = { back++ }, onBusClick = { bus++ }, onRouteClick = { routeStep++ },
+                onRunClick = {}, onReload = {}, onTryAgain = {}, onChangeBus = {}, onChooseAnotherRoute = {},
+            )
+        }
+
+        compose.onNodeWithContentDescription(getString(R.string.setup_trip_so_far)).assertExists()
+        compose.onNodeWithText(getString(R.string.setup_step_run)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(getString(R.string.setup_navigate_up)).performClick()
+        compose.onNode(hasText("4317") and hasClickAction()).performClick()
+        compose.onNodeWithContentDescription(getString(R.string.setup_route, "7")).performClick()
+        assertEquals(listOf(1, 1, 1), listOf(back, bus, routeStep))
+    }
+
+    @Test
+    fun setupHeader_namesTheOnlyBusWithoutOfferingToChangeIt() {
+        compose.setContent {
+            RoutesScreenContent(
+                RoutesUiState.Loading, busId = "4317", onBack = null, onBusClick = null,
+                onRouteClick = {}, onQueryChange = {}, onRetry = {},
+            )
+        }
+
+        compose.onNodeWithText(getString(R.string.setup_step_route)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(getString(R.string.setup_navigate_up)).assertDoesNotExist()
+        compose.onNode(hasText("4317")).assertIsDisplayed().assert(hasClickAction().not())
+    }
+
+    // --- Moving between the steps ---
+
+    @Test
+    fun busScreen_aDoubleTapOpensTheRouteStepOnce() {
+        lateinit var navController: NavHostController
+        compose.setContent {
+            navController = rememberNavController()
+            NavHost(navController, startDestination = "vehicles") {
+                composable("vehicles") { entry ->
+                    // Wired as AppNav wires the bus step.
+                    val open = remember(entry) { entry.ifResumed<String> { id -> navController.navigate("trip/$id") } }
+                    VehicleScreenContent(VehiclesUiState.Loaded(buses, "", busGroups), open, {}, {}, {})
+                }
+                composable("trip/{vehicleId}") {}
+            }
+        }
+
+        // The second tap lands while the bus step is still fading out under the route step.
+        compose.onNode(hasText("4317") and hasClickAction()).performTouchInput { doubleClick() }
+        compose.waitForIdle()
+
+        assertEquals("trip/{vehicleId}", navController.currentDestination?.route)
+        assertEquals("one route step, with the bus step right behind it", "vehicles", navController.previousBackStackEntry?.destination?.route)
     }
 }

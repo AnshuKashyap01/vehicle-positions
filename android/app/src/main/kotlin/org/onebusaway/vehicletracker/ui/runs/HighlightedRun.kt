@@ -7,10 +7,14 @@ import java.time.LocalTime
 import java.time.OffsetDateTime
 import java.time.ZoneId
 
-/** One run of a route on a service date, with its wire times resolved to instants. */
+/**
+ * One run of a route on a service date, with its wire times resolved to instants. [directionId] is GTFS's
+ * `direction_id`, null when the feed gives the run none.
+ */
 data class TripRun(
     val id: String,
     val headsign: String,
+    val directionId: Int?,
     val firstStop: String,
     val lastStop: String,
     val startsAt: Instant,
@@ -55,6 +59,7 @@ fun RouteTripsDto.toRunPage(): RunPage = RunPage(
 private fun TripSummaryDto.toRun(): TripRun = TripRun(
     id = id,
     headsign = headsign,
+    directionId = directionId,
     firstStop = firstStop,
     lastStop = lastStop,
     startsAt = OffsetDateTime.parse(startsAt).toInstant(),

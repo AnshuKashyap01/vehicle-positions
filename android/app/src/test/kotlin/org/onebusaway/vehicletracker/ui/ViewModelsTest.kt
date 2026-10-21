@@ -1,5 +1,6 @@
 package org.onebusaway.vehicletracker.ui
 
+import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.SavedStateHandle
 import app.cash.turbine.test
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +18,7 @@ import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
@@ -31,8 +33,12 @@ import org.onebusaway.vehicletracker.engine.TripFixtures
 import org.onebusaway.vehicletracker.engine.TripGeometry
 import org.onebusaway.vehicletracker.ui.login.LoginError
 import org.onebusaway.vehicletracker.ui.login.LoginViewModel
+import org.onebusaway.vehicletracker.ui.routes.RouteBadgeModel
+import org.onebusaway.vehicletracker.ui.routes.RouteItem
 import org.onebusaway.vehicletracker.ui.routes.RoutesUiState
 import org.onebusaway.vehicletracker.ui.routes.RoutesViewModel
+import org.onebusaway.vehicletracker.ui.routes.showsAsGrid
+import org.onebusaway.vehicletracker.ui.runs.BoardRun
 import org.onebusaway.vehicletracker.ui.runs.RunHighlight
 import org.onebusaway.vehicletracker.ui.runs.RunsUiState
 import org.onebusaway.vehicletracker.ui.runs.RunsViewModel
@@ -40,6 +46,7 @@ import org.onebusaway.vehicletracker.ui.runs.TripError
 import org.onebusaway.vehicletracker.ui.resume.ResumeShiftViewModel
 import org.onebusaway.vehicletracker.ui.tracking.TrackingViewModel
 import org.onebusaway.vehicletracker.ui.tracking.TripEnder
+import org.onebusaway.vehicletracker.ui.vehicles.BusSection
 import org.onebusaway.vehicletracker.ui.vehicles.VehicleViewModel
 import org.onebusaway.vehicletracker.ui.vehicles.VehiclesUiState
 import java.io.File
@@ -226,11 +233,20 @@ class ViewModelsTest {
         return state as VehiclesUiState.Loaded
     }
 
-    /** Applies pending ViewModel work, then reads the ids currently on screen, in order. */
+    /** Applies pending ViewModel work, then reads the ids currently on screen, in order, across their sections. */
     private fun visibleIds(vm: VehicleViewModel): List<String> {
         dispatcher.scheduler.advanceUntilIdle()
-        return loadedState(vm).visible.map { it.id }
+        return loadedState(vm).groups.flatMap { group -> group.tiles.map { it.id } }
     }
+
+    /** Applies pending ViewModel work, then reads each section and the ids under it. */
+    private fun sections(vm: VehicleViewModel): List<Pair<BusSection, List<String>>> {
+        dispatcher.scheduler.advanceUntilIdle()
+        return loadedState(vm).groups.map { group -> group.section to group.tiles.map { it.id } }
+    }
+
+    private fun starred(vm: VehicleViewModel): Set<String> =
+        loadedState(vm).groups.flatMap { it.tiles }.filter { it.favorite }.map { it.id }.toSet()
 
     @Test fun `search filters by id and label`() = runTest(dispatcher) {
         withVehicleViewModel { vm, _ ->
@@ -298,12 +314,12 @@ class ViewModelsTest {
             vm.onToggleFavorite("bus-3")
             dispatcher.scheduler.advanceUntilIdle()
             assertEquals(setOf("bus-3"), prefs.favoritesState.value)
-            assertEquals(setOf("bus-3"), loadedState(vm).favorites)
+            assertEquals(setOf("bus-3"), starred(vm))
             assertEquals("bus-3", visibleIds(vm).first())
 
             vm.onToggleFavorite("bus-3")
             dispatcher.scheduler.advanceUntilIdle()
-            assertEquals(emptySet<String>(), loadedState(vm).favorites)
+            assertEquals(emptySet<String>(), starred(vm))
             assertEquals(listOf("van-2", "bus-1", "bus-3"), visibleIds(vm))
         }
     }
@@ -324,6 +340,46 @@ class ViewModelsTest {
         prefs.recordUse("van-2")
         withVehicleViewModel(prefs = prefs) { vm, _ ->
             assertEquals(listOf("bus-3", "van-2", "bus-1"), visibleIds(vm))
+        }
+    }
+
+    @Test fun `buses sit under favorites, then recent, then all buses, each in one section`() = runTest(dispatcher) {
+        val prefs = FakeVehiclePrefsStore().apply { favoritesState.value = setOf("bus-3") }
+        // bus-3 is both a favorite and the latest used: it is listed once, as a favorite.
+        prefs.recordUse("van-2")
+        prefs.recordUse("bus-3")
+        withVehicleViewModel(prefs = prefs) { vm, _ ->
+            assertEquals(
+                listOf(
+                    BusSection.FAVORITES to listOf("bus-3"),
+                    BusSection.RECENT to listOf("van-2"),
+                    BusSection.ALL to listOf("bus-1"),
+                ),
+                sections(vm),
+            )
+        }
+    }
+
+    @Test fun `a section with no buses is left out`() = runTest(dispatcher) {
+        withVehicleViewModel { vm, _ ->
+            assertEquals(listOf(BusSection.ALL to listOf("van-2", "bus-1", "bus-3")), sections(vm))
+        }
+    }
+
+    @Test fun `while searching, every match is under Matches in the usual order`() = runTest(dispatcher) {
+        val prefs = FakeVehiclePrefsStore().apply { favoritesState.value = setOf("bus-3") }
+        withVehicleViewModel(prefs = prefs) { vm, _ ->
+            vm.onQueryChange("bus")
+            assertEquals(listOf(BusSection.MATCHES to listOf("bus-3", "bus-1")), sections(vm))
+        }
+    }
+
+    @Test fun `a tile shows the label under the fleet number only when it adds something`() = runTest(dispatcher) {
+        val body = """[{"id":"4317","label":"Bus 4317"},{"id":"4318","label":"4318"},{"id":"4319","label":" "}]"""
+        withVehicleViewModel(body = body) { vm, _ ->
+            dispatcher.scheduler.advanceUntilIdle()
+            val labels = loadedState(vm).groups.flatMap { it.tiles }.associate { it.id to it.label }
+            assertEquals(mapOf("4317" to "Bus 4317", "4318" to null, "4319" to null), labels)
         }
     }
 
@@ -427,6 +483,28 @@ class ViewModelsTest {
         }
     }
 
+    private fun routeItem(id: String, longName: String) = RouteItem(id, RouteBadgeModel(id, null, null), longName)
+
+    @Test fun `routes are a grid only when the feed names none of them`() {
+        assertTrue(showsAsGrid(listOf(routeItem("7", ""), routeItem("8", " "))))
+        // One named route keeps every route a row, so the list never mixes rows and badges.
+        assertFalse(showsAsGrid(listOf(routeItem("7", ""), routeItem("8", "Rainier Beach"))))
+        assertFalse(showsAsGrid(listOf(routeItem("7", "Downtown"), routeItem("8", "Rainier Beach"))))
+    }
+
+    @Test fun `a search does not change rows into a grid`() = runTest(dispatcher) {
+        val mixed = """{"routes":[{"id":"R7","short_name":"7","long_name":"","color":"","text_color":"","type":3},""" +
+            """{"id":"R8","short_name":"8","long_name":"Rainier Beach","color":"","text_color":"","type":3}]}"""
+        withRoutesViewModel(response = MockResponse().setBody(mixed)) { vm ->
+            assertFalse(loadedRoutes(vm).grid)
+
+            // Only the unnamed route is left, but the layout follows the whole feed.
+            vm.onQueryChange("7")
+            assertEquals(listOf("R7"), loadedRoutes(vm).visible.map { it.id })
+            assertFalse(loadedRoutes(vm).grid)
+        }
+    }
+
     @Test fun `a failed route load offers a retry, and a 401 does not`() = runTest(dispatcher) {
         withRoutesViewModel(response = MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START)) { vm ->
             assertEquals(RoutesUiState.Error(retry = true), vm.uiState.value)
@@ -480,6 +558,7 @@ class ViewModelsTest {
         startResponses: List<MockResponse> = emptyList(),
         endResponse: () -> MockResponse = { MockResponse().setBody("""{"status":"trip ended"}""") },
         geometryStore: TripGeometryStore = FakeTripGeometryStore(),
+        extraArgs: Map<String, String> = emptyMap(),
         block: (RunsViewModel, MockWebServer, FakeServiceController, FakeTripStateStore) -> Unit,
     ) {
         val server = MockWebServer().apply { start() }
@@ -503,7 +582,7 @@ class ViewModelsTest {
             val serviceController = FakeServiceController()
             // The nav graph's arguments, which is where the ViewModel reads them from — and it
             // loads off them in init, with no load() call from the screen.
-            val args = SavedStateHandle(mapOf("vehicleId" to "bus-1", "routeId" to "R1"))
+            val args = SavedStateHandle(mapOf("vehicleId" to "bus-1", "routeId" to "R1") + extraArgs)
             val vm = RunsViewModel(args, CatalogRepository(provider), tripRepository, geometryStore, serviceController, clock)
             awaitCondition(description = "runs settled") { vm.uiState.value !is RunsUiState.Loading }
             block(vm, server, serviceController, tripState)
@@ -522,8 +601,9 @@ class ViewModelsTest {
     @Test fun `the run under way is badged Now`() = runTest(dispatcher) {
         withRunsViewModel(now = "2026-09-22T08:05:00-07:00") { vm, _, _, _ ->
             val state = loadedRuns(vm)
-            assertEquals("T1", state.highlightedId)
-            assertEquals(RunHighlight.NOW, state.highlight)
+            val runs = state.boards.flatMap { it.runs }.associateBy { it.id }
+            assertEquals(RunHighlight.NOW, runs.getValue("T1").highlight)
+            assertNull(runs.getValue("T4").highlight)
             // The zone is the agency's, read off the response rather than off the device.
             assertEquals("America/Los_Angeles", state.page.timezone.id)
         }
@@ -531,9 +611,9 @@ class ViewModelsTest {
 
     @Test fun `the next run to start is badged Next once the earlier one is over`() = runTest(dispatcher) {
         withRunsViewModel(now = "2026-09-22T09:00:00-07:00") { vm, _, _, _ ->
-            val state = loadedRuns(vm)
-            assertEquals("T4", state.highlightedId)
-            assertEquals(RunHighlight.NEXT, state.highlight)
+            val runs = loadedRuns(vm).boards.flatMap { it.runs }.associateBy { it.id }
+            assertEquals(RunHighlight.NEXT, runs.getValue("T4").highlight)
+            assertTrue("the run before it has gone", runs.getValue("T1").past)
         }
     }
 
@@ -544,7 +624,7 @@ class ViewModelsTest {
             // the catalog.
             val state = loadedRuns(vm)
             assertEquals(emptyList<String>(), state.page.runs.map { it.id })
-            assertNull(state.highlightedId)
+            assertEquals(emptyList<BoardRun>(), state.boards.single().runs)
         }
     }
 
@@ -555,6 +635,14 @@ class ViewModelsTest {
             assertEquals("/api/v1/gtfs/routes/R1/trips", server.takeRequest().path)
             assertEquals(1, server.requestCount)
             assertEquals(listOf("T1", "T4"), loadedRuns(vm).page.runs.map { it.id })
+        }
+    }
+
+    @Test fun `the route's badge comes from the nav arguments, read once`() = runTest(dispatcher) {
+        val routeArgs = mapOf("routeName" to "E Line", "routeColor" to "9C182F", "routeTextColor" to "FFFFFF")
+        withRunsViewModel(extraArgs = routeArgs) { vm, _, _, _ ->
+            assertEquals(RouteBadgeModel("E Line", Color(0xFF9C182F), Color(0xFFFFFFFF)), vm.route)
+            assertEquals("bus-1", vm.vehicleId)
         }
     }
 

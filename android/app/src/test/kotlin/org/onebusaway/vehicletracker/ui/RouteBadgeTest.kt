@@ -1,9 +1,12 @@
 package org.onebusaway.vehicletracker.ui
 
+import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.onebusaway.vehicletracker.ui.routes.RouteBadgeModel
 import org.onebusaway.vehicletracker.ui.routes.routeColorArgb
+import org.onebusaway.vehicletracker.ui.routes.routeColorHex
 
 class RouteBadgeTest {
     @Test fun `a route colour is read as opaque ARGB`() {
@@ -18,5 +21,17 @@ class RouteBadgeTest {
         assertNull(routeColorArgb(""))
         assertNull(routeColorArgb("0077C"))
         assertNull(routeColorArgb("ZZZZZZ"))
+    }
+
+    @Test fun `a colour goes back to the feed's six hex digits for the next screen`() {
+        assertEquals("9C182F", routeColorHex(Color(0xFF9C182F)))
+        assertEquals("00A0E0", routeColorHex(Color(0xFF00A0E0)))
+        assertEquals("", routeColorHex(null))
+    }
+
+    @Test fun `a badge model reads both of the feed's colours once`() {
+        val model = RouteBadgeModel.of("E Line", "9C182F", "FFFFFF")
+        assertEquals(RouteBadgeModel("E Line", Color(0xFF9C182F), Color(0xFFFFFFFF)), model)
+        assertEquals(RouteBadgeModel("7", null, null), RouteBadgeModel.of("7", "", "nope"))
     }
 }

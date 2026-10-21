@@ -18,9 +18,15 @@ import org.onebusaway.vehicletracker.data.recordLocally
 import org.onebusaway.vehicletracker.di.EpochSecondsClock
 import org.onebusaway.vehicletracker.engine.AdherenceEvaluator
 import org.onebusaway.vehicletracker.service.ServiceController
+import org.onebusaway.vehicletracker.ui.ARG_ROUTE_COLOR
 import org.onebusaway.vehicletracker.ui.ARG_ROUTE_ID
+import org.onebusaway.vehicletracker.ui.ARG_ROUTE_NAME
+import org.onebusaway.vehicletracker.ui.ARG_ROUTE_TEXT_COLOR
 import org.onebusaway.vehicletracker.ui.ARG_VEHICLE_ID
+import org.onebusaway.vehicletracker.ui.routes.RouteBadgeModel
 import java.time.Instant
+import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 import javax.inject.Inject
 
 /** Why a run could not be started, in the terms the driver is shown. */
@@ -40,12 +46,16 @@ sealed interface RunsUiState {
 
     data class Loaded(
         val page: RunPage,
-        /** The run to badge and scroll to, and which badge it carries; both null once the day is over. */
-        val highlightedId: String?,
-        val highlight: RunHighlight?,
-        val starting: Boolean,
+        /** [page]'s runs as departure boards, one per direction when they split into two. */
+        val boards: List<Board>,
+        /** The index of the board the screen opens on. */
+        val startBoard: Int,
+        /** The run a start is in flight for, or null. */
+        val startingRunId: String?,
         val error: TripError?,
-    ) : RunsUiState
+    ) : RunsUiState {
+        val starting: Boolean get() = startingRunId != null
+    }
 
     data class Error(val retry: Boolean) : RunsUiState
 }
@@ -61,30 +71,39 @@ class RunsViewModel @Inject constructor(
 ) : ViewModel() {
     // Read here rather than handed in by the screen, so a rotation reuses the ViewModel and its
     // already-loaded runs instead of refetching them. The nav graph guarantees both are present.
-    private val vehicleId: String = checkNotNull(savedStateHandle[ARG_VEHICLE_ID]) { "no $ARG_VEHICLE_ID argument" }
+    /** The bus the run would start on, which a refusal names. */
+    val vehicleId: String = checkNotNull(savedStateHandle[ARG_VEHICLE_ID]) { "no $ARG_VEHICLE_ID argument" }
     private val routeId: String = checkNotNull(savedStateHandle[ARG_ROUTE_ID]) { "no $ARG_ROUTE_ID argument" }
 
-    /** null while a load is in flight; otherwise the outcome of the last one. */
-    private val loadResult = MutableStateFlow<Result<RunPage>?>(null)
-    private val starting = MutableStateFlow(false)
+    /** The route's badge, handed over by the route step: the runs reply names only the route's id. */
+    val route: RouteBadgeModel = RouteBadgeModel.of(
+        shortName = savedStateHandle[ARG_ROUTE_NAME] ?: "",
+        color = savedStateHandle[ARG_ROUTE_COLOR] ?: "",
+        textColor = savedStateHandle[ARG_ROUTE_TEXT_COLOR] ?: "",
+    )
+
+    // The driver's own way of writing a time, read once: the board formats every run's start when it loads.
+    private val timeFormat = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
+
+    /** null while a load is in flight; otherwise the outcome of the last one, with its boards built. */
+    private val loadResult = MutableStateFlow<Result<Pair<RunPage, DepartureBoards>>?>(null)
+    private val startingRun = MutableStateFlow<String?>(null)
     private val startError = MutableStateFlow<TripError?>(null)
 
     val uiState: StateFlow<RunsUiState> = combine(
         loadResult,
-        starting,
+        startingRun,
         startError,
-    ) { result, startInFlight, error ->
+    ) { result, startingRunId, error ->
         when {
             result == null -> RunsUiState.Loading
             result.isSuccess -> {
-                val page = result.getOrThrow()
-                val now = Instant.ofEpochSecond(clock())
-                val highlighted = highlightedRun(page.runs, now)
+                val (page, boards) = result.getOrThrow()
                 RunsUiState.Loaded(
                     page = page,
-                    highlightedId = highlighted?.id,
-                    highlight = highlighted?.let { highlightOf(it, now) },
-                    starting = startInFlight,
+                    boards = boards.boards,
+                    startBoard = boards.start,
+                    startingRunId = startingRunId,
                     error = error,
                 )
             }
@@ -106,7 +125,10 @@ class RunsViewModel @Inject constructor(
         viewModelScope.launch {
             // mapCatching: a zone or a schedule time this platform cannot read is a bad reply,
             // not a crash — the screen offers a retry as it would for any other failed load.
-            loadResult.value = catalogRepository.trips(routeId).mapCatching { it.toRunPage() }
+            loadResult.value = catalogRepository.trips(routeId).mapCatching { dto ->
+                val page = dto.toRunPage()
+                page to departureBoardsOf(page, Instant.ofEpochSecond(clock()), timeFormat)
+            }
         }
     }
 
@@ -116,19 +138,19 @@ class RunsViewModel @Inject constructor(
      */
     fun onStartRun(runId: String, onStarted: () -> Unit) {
         // A second tap on a list whose rows are still enabled would come back 409.
-        if (starting.value) return
+        if (startingRun.value != null) return
         val serviceDate = (uiState.value as? RunsUiState.Loaded)?.page?.serviceDate ?: return
-        starting.value = true
+        startingRun.value = runId
         startError.value = null
         viewModelScope.launch {
             when (val error = startRun(runId, serviceDate)) {
                 null -> {
                     serviceController.startTracking()
-                    starting.value = false
+                    startingRun.value = null
                     onStarted()
                 }
                 else -> {
-                    starting.value = false
+                    startingRun.value = null
                     startError.value = error
                 }
             }
