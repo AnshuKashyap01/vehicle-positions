@@ -280,6 +280,41 @@ alone carries the status. Fixes captured while offline are dropped, not queued
 (v1 behaviour), so the counter resumes climbing from where it left off rather
 than catching up.
 
+### Check 3b — The sign-in renews itself during a trip
+
+The app trades its refresh token for a new access token a minute before the
+access token expires, and again after a `401`. This check shortens the access
+token's life to two minutes and makes the one in the app invalid, then watches
+the app keep reporting without the driver doing anything.
+
+1. With the trip still running, restart the server with two-minute access
+   tokens and a **new** `JWT_SECRET`. The new secret makes the app's access
+   token invalid at once. Refresh tokens live in the database, so the app's
+   still works.
+
+   ```bash
+   kill $(lsof -nP -iTCP:$PORT -sTCP:LISTEN -t)
+   export JWT_SECRET=$(openssl rand -hex 32) ACCESS_TOKEN_TTL=2m
+   go run . > /tmp/vt-server.log 2>&1 &
+   ```
+
+2. Watch the reports and the refreshes for about ten minutes:
+
+   ```bash
+   grep -E '"path":"/api/v1/(locations|auth/refresh)"|"msg":"refresh' /tmp/vt-server.log
+   ```
+
+**Expected outcome:** the first report after the restart gets a `401`, followed
+at once by `refresh token rotated` and the same report again, answered `201`.
+After that, `refresh token rotated` appears about once a minute, every
+`/api/v1/locations` is answered `201`, and there is no other `401`. The banner
+stays green **Reporting** and the "n sent" counter keeps climbing. (A rare
+`429` is the server's limit of one report per 5 seconds, #171; it turns up
+with or without a refresh and is not part of this check.)
+
+The rest of the checks run the same with two-minute tokens, and Check 4b needs
+them, so leave `ACCESS_TOKEN_TTL` set.
+
 ### Check 4 — Relaunching rehydrates the trip as Paused
 
 1. Terminate the app (`xcrun simctl terminate "$UDID"
@@ -298,13 +333,37 @@ foreground, which is why a relaunch pauses rather than resuming by itself.)
 The same pair of buttons appears when the location stream dies mid-trip and
 the banner reads "Location stopped — tap Resume".
 
-### Check 4b — An expired sign-in can be put off
+### Check 4b — A sign-in that can't be renewed can be put off
 
-Only reachable with a token older than 24 h, so it is usually checked by hand
-rather than in a timed run: when `reporting` becomes "Signed out — sign in
-again" the re-login sheet appears over the tracking screen. **Later** dismisses
-it without re-authenticating — the trip keeps running and the banner keeps
-saying signed out — and **tapping the banner** brings the sheet back.
+The app asks for the password only when the server refuses its refresh token.
+Deactivating the driver deletes their refresh tokens, so it reaches that state
+within one two-minute access token from Check 3b.
+
+1. With the trip reporting, deactivate the driver: open `$BASE/admin` in a
+   browser and sign in as `admin@test.com` again (the new secret from Check 3b
+   ended that session too), then on **Users** click **Deactivate** on the
+   driver's row and confirm.
+
+**Expected outcome:** within about two minutes, when the app's access token
+runs out, the banner turns red **Signed out — sign in again** and the **Sign
+in again** sheet appears over the tracking screen. Deactivating deleted the
+driver's refresh tokens, so in the token's last minute the log from Check 3b
+shows each early refresh refused (`refresh: unknown token presented`) while
+reports still get `201`. Once the token expires, a report gets `401`, the
+refresh is refused once more, and every report after that gets `401` with no
+refresh.
+
+2. Tap **Later**.
+
+**Expected outcome:** the sheet goes away without signing in. The trip keeps
+running and the banner keeps saying signed out. **Tapping the banner** brings
+the sheet back.
+
+3. Click **Activate** on the same row, then sign in on the sheet with the
+   driver's password.
+
+**Expected outcome:** the banner turns green **Reporting** on the same trip,
+and reports reach the server again.
 
 ### Check 5 — Ending the trip drops the vehicle from the feed
 
