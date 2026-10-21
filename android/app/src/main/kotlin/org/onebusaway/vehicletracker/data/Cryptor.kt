@@ -14,7 +14,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Encrypts the driver's JWT before it reaches disk.
+ * Encrypts the driver's tokens before they reach disk.
  *
  * This is a seam rather than an abstraction for its own sake: [EncryptedSessionStore] holds all
  * of the session, migration and recovery logic and is exercised on the JVM against a fake, while

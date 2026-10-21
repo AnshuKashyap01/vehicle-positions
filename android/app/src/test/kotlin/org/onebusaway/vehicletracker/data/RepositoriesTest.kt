@@ -27,18 +27,30 @@ class RepositoriesTest {
     private fun apiFor(server: MockWebServer) =
         ApiFactory { "jwt" }.create(server.url("/").toString())
 
-    @Test fun `login success stores url, token, and issue time`() = runTest {
+    @Test fun `login success stores url, both tokens, issue time and expiry`() = runTest {
         val server = MockWebServer().apply { start() }
-        server.enqueue(MockResponse().setBody("""{"token":"jwt-1"}"""))
+        server.enqueue(MockResponse().setBody(
+            """{"token":"jwt-1","access_token":"jwt-1","refresh_token":"r1","expires_in":900}"""))
         val sessions = FakeSessionStore()
         val repo = AuthRepository(sessions, ApiFactory { null }, clock = { 1000L })
 
         val result = repo.login(server.url("/").toString(), "d@example.com", "pw")
 
         assertTrue(result.isSuccess)
-        val s = sessions.session.first()
-        assertEquals("jwt-1", s.token)
-        assertEquals(1000L, s.issuedAtEpochSec)
+        assertEquals(Session(server.url("/").toString(), "jwt-1", 1000L, "r1", 1900L), sessions.session.first())
+        server.shutdown()
+    }
+
+    @Test fun `login saves access_token, not the deprecated token`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setBody(
+            """{"token":"deprecated-copy","access_token":"jwt-1","refresh_token":"r1","expires_in":900}"""))
+        val sessions = FakeSessionStore()
+        val repo = AuthRepository(sessions, ApiFactory { null }, clock = { 1000L })
+
+        repo.login(server.url("/").toString(), "d@example.com", "pw")
+
+        assertEquals("jwt-1", sessions.session.first().token)
         server.shutdown()
     }
 

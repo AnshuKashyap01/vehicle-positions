@@ -19,11 +19,22 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.onebusaway.vehicletracker.data.api.LoginResponse
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.util.Base64
 
-data class Session(val serverUrl: String?, val token: String?, val issuedAtEpochSec: Long?) {
+/**
+ * The driver's session. [refreshToken] and [accessExpiresAtEpochSec] are null for a session saved
+ * by a build that did not keep them.
+ */
+data class Session(
+    val serverUrl: String?,
+    val token: String?,
+    val issuedAtEpochSec: Long?,
+    val refreshToken: String? = null,
+    val accessExpiresAtEpochSec: Long? = null,
+) {
     fun hasFreshToken(nowEpochSec: Long): Boolean =
         token != null && issuedAtEpochSec != null && nowEpochSec - issuedAtEpochSec < 24 * 3600
 
@@ -46,9 +57,28 @@ internal fun jwtSubject(token: String): String? = try {
     null
 }
 
+/** What a sign-in or a refresh hands out, with its times on the phone's clock. */
+data class IssuedTokens(
+    val accessToken: String,
+    val refreshToken: String,
+    val accessExpiresAtEpochSec: Long,
+    val issuedAtEpochSec: Long,
+)
+
+/**
+ * The tokens in this reply, timed from [nowEpochSec], the moment it arrived. `expires_in` is
+ * relative, so a phone clock that disagrees with the server's does not move the expiry.
+ */
+fun LoginResponse.issuedAt(nowEpochSec: Long) = IssuedTokens(
+    accessToken = accessToken,
+    refreshToken = refreshToken,
+    accessExpiresAtEpochSec = nowEpochSec + expiresIn,
+    issuedAtEpochSec = nowEpochSec,
+)
+
 interface SessionStore {
     val session: Flow<Session>
-    suspend fun saveLogin(serverUrl: String, token: String, issuedAtEpochSec: Long)
+    suspend fun saveLogin(serverUrl: String, tokens: IssuedTokens)
     suspend fun clearToken()
 }
 
@@ -58,13 +88,13 @@ internal val Context.sessionDataStore: DataStore<Preferences> by preferencesData
 private const val LOG_TAG = "SessionStore"
 
 /**
- * Persists the driver's session, with the JWT encrypted by [cryptor] before it reaches disk.
+ * Persists the driver's session, with both tokens encrypted by [cryptor] before they reach disk.
  *
  * Takes a `DataStore<Preferences>` rather than a `Context` — the same trade
  * [DataStoreTripStateStore] makes — so the upgrade path from the previous build can be
  * unit-tested without an emulator.
  *
- * Only the token is encrypted. The server URL and the issued-at timestamp are not credentials,
+ * Only the tokens are encrypted. The server URL and the two timestamps are not credentials,
  * and leaving them in the clear keeps the upgrade to a single key.
  */
 class EncryptedSessionStore(
@@ -75,6 +105,8 @@ class EncryptedSessionStore(
         val SERVER_URL = stringPreferencesKey("server_url")
         val TOKEN = stringPreferencesKey("token_enc")
         val TOKEN_ISSUED_AT = longPreferencesKey("token_issued_at")
+        val TOKEN_EXPIRES_AT = longPreferencesKey("token_expires_at")
+        val REFRESH_TOKEN = stringPreferencesKey("refresh_token_enc")
 
         /**
          * The plaintext token written by builds before this one, read once so an upgrade does not
@@ -100,6 +132,8 @@ class EncryptedSessionStore(
                         serverUrl = prefs[Keys.SERVER_URL],
                         token = readToken(prefs),
                         issuedAtEpochSec = prefs[Keys.TOKEN_ISSUED_AT],
+                        refreshToken = readRefreshToken(prefs),
+                        accessExpiresAtEpochSec = prefs[Keys.TOKEN_EXPIRES_AT],
                     )
                 },
         )
@@ -152,14 +186,31 @@ class EncryptedSessionStore(
         }
     }
 
-    override suspend fun saveLogin(serverUrl: String, token: String, issuedAtEpochSec: Long) {
+    /**
+     * Read like [readToken]: a refresh token that cannot be decrypted is reported as none. The
+     * access token is read on its own, so the driver stays signed in until it expires.
+     */
+    private fun readRefreshToken(prefs: Preferences): String? {
+        val stored = prefs[Keys.REFRESH_TOKEN] ?: return null
+        return try {
+            cryptor.decrypt(stored)
+        } catch (e: GeneralSecurityException) {
+            Log.w(LOG_TAG, "Stored refresh token could not be decrypted; treating it as absent.", e)
+            null
+        }
+    }
+
+    override suspend fun saveLogin(serverUrl: String, tokens: IssuedTokens) {
         // Encrypt before opening the transaction so a Keystore failure reaches the caller —
         // AuthRepository.login turns it into Result.failure — without half-writing a session.
-        val encrypted = cryptor.encrypt(token)
+        val access = cryptor.encrypt(tokens.accessToken)
+        val refresh = cryptor.encrypt(tokens.refreshToken)
         dataStore.edit { prefs ->
             prefs[Keys.SERVER_URL] = serverUrl
-            prefs[Keys.TOKEN] = encrypted
-            prefs[Keys.TOKEN_ISSUED_AT] = issuedAtEpochSec
+            prefs[Keys.TOKEN] = access
+            prefs[Keys.REFRESH_TOKEN] = refresh
+            prefs[Keys.TOKEN_ISSUED_AT] = tokens.issuedAtEpochSec
+            prefs[Keys.TOKEN_EXPIRES_AT] = tokens.accessExpiresAtEpochSec
             prefs.remove(Keys.LEGACY_TOKEN)
         }
     }
@@ -168,6 +219,8 @@ class EncryptedSessionStore(
         dataStore.edit { prefs ->
             prefs.remove(Keys.TOKEN)
             prefs.remove(Keys.TOKEN_ISSUED_AT)
+            prefs.remove(Keys.REFRESH_TOKEN)
+            prefs.remove(Keys.TOKEN_EXPIRES_AT)
             prefs.remove(Keys.LEGACY_TOKEN)
         }
     }

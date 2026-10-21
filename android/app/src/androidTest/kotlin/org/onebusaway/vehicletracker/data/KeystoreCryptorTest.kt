@@ -60,23 +60,23 @@ class KeystoreCryptorTest {
         assertEquals(TOKEN, KeystoreCryptor().decrypt(ciphertext))
     }
 
-    /** The test the whole change exists for: the token must not be legible on disk. */
+    /** The test the whole change exists for: the tokens must not be legible on disk. */
     @Test
     fun theSessionFileHoldsNoPlaintextToken() = runBlocking {
         val dataStore = PreferenceDataStoreFactory.create(scope = scope, produceFile = { file })
         val store = EncryptedSessionStore(dataStore, KeystoreCryptor())
 
-        store.saveLogin(SERVER, TOKEN, ISSUED_AT)
+        store.saveLogin(SERVER, IssuedTokens(TOKEN, REFRESH_TOKEN, ISSUED_AT + 900, ISSUED_AT))
 
-        assertFalse(
-            "the token appears verbatim in $file",
-            file.readText(Charsets.ISO_8859_1).contains(TOKEN),
-        )
+        val onDisk = file.readText(Charsets.ISO_8859_1)
+        assertFalse("the token appears verbatim in $file", onDisk.contains(TOKEN))
+        assertFalse("the refresh token appears verbatim in $file", onDisk.contains(REFRESH_TOKEN))
     }
 
     private companion object {
         const val SERVER = "https://transit.example.org/"
         const val TOKEN = "eyJhbGciOiJIUzI1NiJ9.driver42.signature"
+        const val REFRESH_TOKEN = "3f9a17c0d2e84b65a1f0c9e7b3d24a68"
         const val ISSUED_AT = 1_785_886_200L
     }
 }

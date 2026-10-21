@@ -96,7 +96,7 @@ class ViewModelsTest {
 
     @Test fun `login success invokes callback`() = runTest(dispatcher) {
         val server = MockWebServer().apply { start() }
-        server.enqueue(MockResponse().setBody("""{"token":"jwt"}"""))
+        server.enqueue(MockResponse().setBody("""{"access_token":"jwt","refresh_token":"r1","expires_in":900}"""))
         val sessionStore = FakeSessionStore()
         val vm = LoginViewModel(AuthRepository(sessionStore, ApiFactory { null }, clock = { 0L }), sessionStore)
         vm.onServerUrlChange(server.url("/").toString())
