@@ -4,8 +4,9 @@ import Foundation
 /// follows a redirect (a token or a position must not be re-sent to a host the
 /// request was not addressed to), and reads the bearer token from `tokens` on
 /// every request so a re-login mid-trip takes effect at once. Given a
-/// `refresher`, it renews an access token the server turned away with a 401
-/// and sends the request again, once.
+/// `refresher`, it renews an access token about to expire before the request,
+/// and one the server turned away with a 401 after it, sending the request
+/// again, once.
 nonisolated final class TrackerClient: TrackerAPI, Sendable {
     let baseURL: URL
     private let session: URLSession
@@ -77,8 +78,12 @@ nonisolated final class TrackerClient: TrackerAPI, Sendable {
         // Sign-in and refresh go without a token, so neither can set off a
         // refresh: a wrong password must not quietly renew the session of
         // whoever signed in on this phone before.
-        guard authorized, let token = (try? tokens.load())?.token else {
+        guard authorized, let stored = try? tokens.load() else {
             return try await perform(request)
+        }
+        var token = stored.token
+        if let refresher, refresher.isRefreshDue(stored) {
+            token = await refresher.beforeExpiry(observedToken: token, refresh: { [self] in await refresh($0) })
         }
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         do {

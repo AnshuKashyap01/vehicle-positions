@@ -69,23 +69,58 @@ actor TokenRefresher {
         }
         guard let stored else { return .refused }
         if stored.token != failedToken { return .retry(stored.token) }
-        if let inFlight { return await inFlight.value }
-        guard let refreshToken = stored.refreshToken else { return .refused }
-        let task = Task { await trade(refreshToken, refresh: refresh) }
-        inFlight = task
+        let task: Task<Outcome, Never>
+        if let inFlight {
+            task = inFlight
+        } else {
+            guard let refreshToken = stored.refreshToken else { return .refused }
+            task = Task { await trade(refreshToken, dropIfRefused: true, refresh: refresh) }
+            inFlight = task
+        }
         return await task.value
     }
 
+    /// Whether `stored`'s access token is due a refresh before it expires.
+    nonisolated func isRefreshDue(_ stored: StoredToken) -> Bool {
+        stored.refreshDueAt.map { now() >= $0 } ?? false
+    }
+
+    /// Before a request goes out with `observedToken`: the token to send it
+    /// with, renewed when it is about to expire. An early refresh that fails
+    /// or is refused never fails the request, which goes out with the token it
+    /// has while that still works; the 401 after it expires is where a refused
+    /// refresh token is dropped and a failure reported.
+    func beforeExpiry(observedToken: String, refresh: @escaping Refresh) async -> String {
+        // As in `afterUnauthorized`, nothing is awaited until a refresh has
+        // been joined or started.
+        guard let stored = try? tokens.load() else { return observedToken }
+        // A token another request has just refreshed is not due.
+        if stored.token != observedToken { return stored.token }
+        let task: Task<Outcome, Never>
+        if let inFlight {
+            task = inFlight
+        } else {
+            guard isRefreshDue(stored), let refreshToken = stored.refreshToken else { return observedToken }
+            task = Task { await trade(refreshToken, dropIfRefused: false, refresh: refresh) }
+            inFlight = task
+        }
+        if case .retry(let renewed) = await task.value { return renewed }
+        return observedToken
+    }
+
     /// Presents `refreshToken` once and saves the pair the server hands back.
-    private func trade(_ refreshToken: String, refresh: Refresh) async -> Outcome {
+    private func trade(_ refreshToken: String, dropIfRefused: Bool, refresh: Refresh) async -> Outcome {
         defer { inFlight = nil }
         switch await refresh(refreshToken) {
         case .issued(let issued):
             save(issued, spending: refreshToken)
             return .retry(issued.accessToken)
-        case .refused:
+        case .refused where dropIfRefused:
             log.warning("the server refused the refresh token; the driver signs in again")
             dropRefreshToken(refreshToken)
+            return .refused
+        case .refused:
+            log.warning("the server refused an early refresh; the request goes out with the current token")
             return .refused
         case .unreachable(let message):
             log.warning("could not refresh; keeping both tokens for the next request: \(message)")

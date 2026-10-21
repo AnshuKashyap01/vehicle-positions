@@ -91,4 +91,21 @@ import Testing
         try #require(added == errSecSuccess)
         #expect(try store.load() == previousBuildToken)
     }
+
+    @Test func aRefreshIsDueAMinuteBeforeExpiry() {
+        let day = StoredToken(token: "a1", issuedAt: issued, refreshToken: "r1", expiresAt: issued.addingTimeInterval(24 * 3600))
+        #expect(day.refreshDueAt == issued.addingTimeInterval(24 * 3600 - 60))
+        let twoMinutes = StoredToken(token: "a1", issuedAt: issued, refreshToken: "r1", expiresAt: issued.addingTimeInterval(120))
+        #expect(twoMinutes.refreshDueAt == issued.addingTimeInterval(60))
+    }
+
+    @Test func aShortLivedTokenIsRefreshedHalfwayThrough() {
+        let t = StoredToken(token: "a1", issuedAt: issued, refreshToken: "r1", expiresAt: issued.addingTimeInterval(60))
+        #expect(t.refreshDueAt == issued.addingTimeInterval(30))
+    }
+
+    @Test func noRefreshIsDueWithoutARefreshTokenOrAnExpiry() {
+        #expect(StoredToken(token: "a1", issuedAt: issued, expiresAt: issued.addingTimeInterval(900)).refreshDueAt == nil)
+        #expect(StoredToken(token: "a1", issuedAt: issued, refreshToken: "r1").refreshDueAt == nil)
+    }
 }

@@ -22,6 +22,17 @@ nonisolated struct StoredToken: Sendable, Codable, Equatable {
     func isSignedIn(now: Date) -> Bool {
         refreshToken != nil || now < (expiresAt ?? issuedAt.addingTimeInterval(Self.oldBuildLifetime))
     }
+
+    /// The earliest a refresh goes out before the access token expires.
+    static let maxEarlyRefresh: TimeInterval = 60
+
+    /// When to renew the access token before it expires, so requests don't
+    /// meet a 401: a minute early, or halfway through a lifetime shorter than
+    /// two minutes. Nil without a refresh token or an expiry.
+    var refreshDueAt: Date? {
+        guard refreshToken != nil, let expiresAt else { return nil }
+        return expiresAt.addingTimeInterval(-min(Self.maxEarlyRefresh, expiresAt.timeIntervalSince(issuedAt) / 2))
+    }
 }
 
 extension StoredToken {

@@ -270,4 +270,40 @@ import Testing
         #expect(!requests.contains { $0.url.path == "/api/v1/auth/refresh" })
         #expect(held.presented == ["r1"])
     }
+
+    /// Thirty seconds from expiry, so the refresh happens before the request.
+    var aboutToExpire: StoredToken {
+        StoredToken(token: "a1", issuedAt: now.addingTimeInterval(-870), refreshToken: "r1", expiresAt: now.addingTimeInterval(30))
+    }
+
+    @Test func aTokenAboutToExpireIsRefreshedBeforeTheRequest() async throws {
+        serve(refresh: renewedReply)
+        let store = InMemoryTokenStore(aboutToExpire)
+        #expect(try await refreshingClient(store).myVehicles() == busOne)
+        #expect(requests.map(\.url.path) == ["/api/v1/auth/refresh", "/api/v1/vehicles"])
+        #expect(requests.last?.headers["Authorization"] == "Bearer a2")
+        #expect(try store.load()?.refreshToken == "r2")
+    }
+
+    @Test func aTokenWithTimeLeftGoesOutWithoutARefresh() async throws {
+        StubURLProtocol.reset { _ in (200, Data(#"[{"id":"bus-1","label":"Bus 1"}]"#.utf8)) }
+        #expect(try await refreshingClient(InMemoryTokenStore(signedIn)).myVehicles() == busOne)
+        #expect(requests.map(\.url.path) == ["/api/v1/vehicles"])
+        #expect(requests.last?.headers["Authorization"] == "Bearer a1")
+    }
+
+    /// The access token still works, so a refused or failed early refresh
+    /// costs the request nothing, and the refresh token waits for the 401.
+    @Test(arguments: [401, 500])
+    func anEarlyRefreshThatFailsStillSendsTheRequest(status: Int) async throws {
+        StubURLProtocol.reset { req in
+            if req.url!.path == "/api/v1/auth/refresh" { return (status, Data(#"{"error":"no"}"#.utf8)) }
+            return (200, Data(#"[{"id":"bus-1","label":"Bus 1"}]"#.utf8))
+        }
+        let store = InMemoryTokenStore(aboutToExpire)
+        #expect(try await refreshingClient(store).myVehicles() == busOne)
+        #expect(requests.map(\.url.path) == ["/api/v1/auth/refresh", "/api/v1/vehicles"])
+        #expect(requests.last?.headers["Authorization"] == "Bearer a1")
+        #expect(try store.load() == aboutToExpire)
+    }
 }

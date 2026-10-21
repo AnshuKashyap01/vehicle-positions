@@ -113,4 +113,58 @@ import Testing
         #expect(await outcome == .refused)
         #expect(try store.load() == newSession)
     }
+
+    // MARK: Before expiry
+
+    /// Signed in with a1 and r1, thirty seconds from expiry: a refresh is due.
+    var aboutToExpire: StoredToken {
+        StoredToken(token: "a1", issuedAt: now.addingTimeInterval(-870), refreshToken: "r1", expiresAt: now.addingTimeInterval(30))
+    }
+
+    @Test func aRefreshIsDueFromItsDueTimeOn() {
+        let refresher = refresher(InMemoryTokenStore())
+        let dueNow = StoredToken(token: "a1", issuedAt: now.addingTimeInterval(-840), refreshToken: "r1", expiresAt: now.addingTimeInterval(60))
+        let dueInASecond = StoredToken(token: "a1", issuedAt: now.addingTimeInterval(-839), refreshToken: "r1", expiresAt: now.addingTimeInterval(61))
+        #expect(refresher.isRefreshDue(dueNow))
+        #expect(!refresher.isRefreshDue(dueInASecond))
+    }
+
+    @Test func requestsAboutToGoOutTogetherMakeOneEarlyRefresh() async throws {
+        let store = ScriptedTokenStore(aboutToExpire)
+        let refresher = refresher(store)
+        let refresh = ScriptedRefresh()
+
+        async let first = refresher.beforeExpiry(observedToken: "a1", refresh: refresh.call)
+        async let second = refresher.beforeExpiry(observedToken: "a1", refresh: refresh.call)
+        #expect(await eventually { store.loads == 2 && !refresh.presented.isEmpty })
+        refresh.answer(.issued(renewed))
+
+        #expect(await first == "a2")
+        #expect(await second == "a2")
+        #expect(refresh.presented == ["r1"])
+    }
+
+    @Test func aRequestThatMissedAnEarlyRefreshGoesOutWithTheNewToken() async throws {
+        let store = ScriptedTokenStore(StoredToken(renewed, receivedAt: now))
+        let refresh = ScriptedRefresh(answering: .refused)
+        #expect(await refresher(store).beforeExpiry(observedToken: "a1", refresh: refresh.call) == "a2")
+        #expect(refresh.presented.isEmpty)
+    }
+
+    @Test func aTokenWithTimeLeftIsNotRefreshedEarly() async {
+        var withTimeLeft = aboutToExpire
+        withTimeLeft.expiresAt = now.addingTimeInterval(900)
+        let refresh = ScriptedRefresh(answering: .issued(renewed))
+        #expect(await refresher(ScriptedTokenStore(withTimeLeft)).beforeExpiry(observedToken: "a1", refresh: refresh.call) == "a1")
+        #expect(refresh.presented.isEmpty)
+    }
+
+    /// The token still works, so the request goes out with it; the refresh
+    /// token is dropped only by the 401 after expiry.
+    @Test func aRefusedEarlyRefreshKeepsTheRefreshToken() async throws {
+        let store = ScriptedTokenStore(aboutToExpire)
+        let refresh = ScriptedRefresh(answering: .refused)
+        #expect(await refresher(store).beforeExpiry(observedToken: "a1", refresh: refresh.call) == "a1")
+        #expect(try store.load() == aboutToExpire)
+    }
 }
