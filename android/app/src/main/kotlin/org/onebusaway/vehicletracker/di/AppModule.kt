@@ -74,11 +74,13 @@ annotation class ServiceAnnounceGrace
  * after a fresh login token was persisted) — [api] guards against that race by synchronously
  * seeding itself from the store exactly once, the first time it's called, via [ensureSeeded].
  *
- * The cache is only ever the token to send. Refreshing it is [TokenRefresher]'s, which reads the
- * store itself rather than this copy, because the copy can lag a save.
+ * It also caches when the token is due a refresh. The cache only says which token to send and
+ * when a refresh may be due: refreshing is [TokenRefresher]'s, which decides from the store rather
+ * than this copy, because the copy can lag a save.
  */
 class ApiHolder(private val sessionStore: SessionStore, scope: CoroutineScope, clock: () -> Long) {
     @Volatile private var token: String? = null
+    @Volatile private var refreshDueAt: Long? = null
     @Volatile private var serverUrl: String? = null
     @Volatile private var seeded = false
     @Volatile private var cachedApi: TrackerApi? = null
@@ -87,7 +89,9 @@ class ApiHolder(private val sessionStore: SessionStore, scope: CoroutineScope, c
 
     // The refresher calls the server through apiFactory, which is built just below and long before
     // any request can need a refresh.
-    private val refresher = TokenRefresher(sessionStore, clock) { url -> apiFactory.createRefreshApi(url) }
+    private val refresher = TokenRefresher(sessionStore, clock, cachedRefreshDueAt = { refreshDueAt }) { url ->
+        apiFactory.createRefreshApi(url)
+    }
 
     val apiFactory: ApiFactory = ApiFactory(refresher) { token }
 
@@ -95,6 +99,7 @@ class ApiHolder(private val sessionStore: SessionStore, scope: CoroutineScope, c
         sessionStore.session
             .onEach { session ->
                 token = session.token
+                refreshDueAt = session.refreshDueAtEpochSec
                 serverUrl = session.serverUrl
                 seeded = true
             }
@@ -114,6 +119,7 @@ class ApiHolder(private val sessionStore: SessionStore, scope: CoroutineScope, c
             runCatching { runBlocking { sessionStore.session.first() } }
                 .onSuccess { session ->
                     token = session.token
+                    refreshDueAt = session.refreshDueAtEpochSec
                     serverUrl = session.serverUrl
                 }
             seeded = true

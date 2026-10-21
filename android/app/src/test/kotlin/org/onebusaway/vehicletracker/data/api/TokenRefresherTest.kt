@@ -10,6 +10,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -45,6 +46,7 @@ import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Drives [TokenRefresher] the way the app does: through [ApiHolder] and the client [ApiFactory]
@@ -74,8 +76,8 @@ class TokenRefresherTest {
         scopes.forEach { it.cancel() }
     }
 
-    private fun holder(store: SessionStore = sessions) =
-        ApiHolder(store, CoroutineScope(Job().apply { cancel() }), clock = { NOW })
+    private fun holder(store: SessionStore = sessions, now: Long = NOW) =
+        ApiHolder(store, CoroutineScope(Job().apply { cancel() }), clock = { now })
 
     private fun newDataStore(): DataStore<Preferences> = PreferenceDataStoreFactory.create(
         scope = CoroutineScope(Job() + Dispatchers.IO).also { scopes += it },
@@ -161,7 +163,7 @@ class TokenRefresherTest {
     // anything else on its own thread, which ends the app.
     @Test fun `a 200 that is not a token pair fails as a network error and keeps both tokens`() {
         fake.refreshReply = { MockResponse().setBody("<html>Sign in to the Wi-Fi</html>") }
-        val refresher = TokenRefresher(sessions, clock = { NOW }) { url ->
+        val refresher = TokenRefresher(sessions, clock = { NOW }, cachedRefreshDueAt = { null }) { url ->
             ApiFactory { null }.createRefreshApi(url)
         }
 
@@ -246,6 +248,90 @@ class TokenRefresherTest {
         assertEquals(401, (failure as? HttpException)?.code())
     }
 
+    @Test fun `a token due a refresh is refreshed before the request, which never meets a 401`() = runTest {
+        assertEquals(emptyList<VehicleDto>(), holder(now = DUE).api().myVehicles())
+
+        val requests = recorded()
+        assertEquals(listOf("/api/v1/auth/refresh", "/api/v1/vehicles"), requests.map { it.path })
+        assertEquals("Bearer a2", requests[1].getHeader("Authorization"))
+        assertEquals(Session(serverUrl, "a2", DUE, "r2", DUE + 900), sessions.state.value)
+    }
+
+    @Test fun `a request with no refresh due does not read the store`() {
+        val reads = AtomicInteger()
+        val counting = object : SessionStore by sessions {
+            override val session = sessions.state.onStart { reads.incrementAndGet() }
+        }
+        val refresher = TokenRefresher(counting, clock = { DUE - 1 }, cachedRefreshDueAt = { DUE }) { url ->
+            ApiFactory { null }.createRefreshApi(url)
+        }
+
+        assertEquals("a1", refresher.beforeExpiry("a1"))
+        assertEquals(0, reads.get())
+    }
+
+    @Test fun `a token a second short of due is sent as it is`() = runTest {
+        fake.accepted = "a1"
+
+        holder(now = DUE - 1).api().myVehicles()
+
+        assertEquals(listOf("Bearer a1"), recorded().map { it.getHeader("Authorization") })
+    }
+
+    @Test fun `an early refresh that can't get through still sends the request with the current token`() = runTest {
+        fake.accepted = "a1"
+        fake.refreshReply = { MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST) }
+
+        assertEquals(emptyList<VehicleDto>(), holder(now = DUE).api().myVehicles())
+
+        assertEquals("Bearer a1", recorded().last().getHeader("Authorization"))
+        assertEquals(Session(serverUrl, "a1", ISSUED_AT, "r1", ISSUED_AT + 900), sessions.state.value)
+    }
+
+    // The token is dropped by the 401 that follows the access token's expiry, not here.
+    @Test fun `an early refresh the server refuses still sends the request with the current token`() = runTest {
+        fake.accepted = "a1"
+        fake.refreshReply = { unauthorized("invalid or expired refresh token") }
+
+        assertEquals(emptyList<VehicleDto>(), holder(now = DUE).api().myVehicles())
+
+        assertEquals("Bearer a1", recorded().last().getHeader("Authorization"))
+        assertEquals(Session(serverUrl, "a1", ISSUED_AT, "r1", ISSUED_AT + 900), sessions.state.value)
+    }
+
+    @Test fun `a token due a refresh that another request has already refreshed is swapped without a refresh`() = runTest {
+        val holder = holder(now = DUE)
+        holder.api() // seeds the cached copy with a1, due now
+        sessions.state.value = Session(serverUrl, "a2", DUE, "r2", DUE + 900)
+
+        holder.api().myVehicles()
+
+        val requests = recorded()
+        assertEquals(listOf("Bearer a2"), requests.map { it.getHeader("Authorization") })
+        assertTrue(requests.refreshes().isEmpty())
+    }
+
+    @Test fun `a token saved after the app started is refreshed early too`() = runTest {
+        sessions.state.value = Session(serverUrl, null, null)
+        val holder = ApiHolder(sessions, CoroutineScope(Dispatchers.Unconfined).also { scopes += it }, clock = { DUE })
+        sessions.state.value = Session(serverUrl, "a1", ISSUED_AT, "r1", ISSUED_AT + 900)
+
+        holder.api().myVehicles()
+
+        assertEquals(listOf("/api/v1/auth/refresh", "/api/v1/vehicles"), recorded().map { it.path })
+    }
+
+    @Test fun `the store, not the cached copy, decides whether a refresh is due`() = runTest {
+        fake.accepted = "a1"
+        val holder = holder(now = DUE)
+        holder.api() // seeds the cached copy, which says a refresh is due now
+        sessions.state.value = sessions.state.value.copy(accessExpiresAtEpochSec = ISSUED_AT + 3600)
+
+        holder.api().myVehicles()
+
+        assertTrue(recorded().refreshes().isEmpty())
+    }
+
     /**
      * Answers like the server. The API takes only [accepted] and answers 401 to anything else.
      * `/auth/refresh` answers with [refreshReply], except to a refresh token it has already
@@ -278,6 +364,9 @@ class TokenRefresherTest {
     private companion object {
         const val ISSUED_AT = 1_785_886_200L
         const val NOW = ISSUED_AT + 600
+
+        /** When a token issued at [ISSUED_AT] for 900 seconds is refreshed early: a minute before it expires. */
+        const val DUE = ISSUED_AT + 840
 
         fun pair(access: String, refresh: String) = MockResponse().setBody(
             """{"token":"$access","access_token":"$access","refresh_token":"$refresh","expires_in":900}""")

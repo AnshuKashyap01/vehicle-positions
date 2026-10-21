@@ -30,13 +30,46 @@ private const val TAG = "TokenRefresher"
  *
  * It blocks, holding the lock across the call to the server. OkHttp calls it on its own threads,
  * where that is fine, and a request that waits is one that would otherwise have refreshed again.
+ *
+ * [cachedRefreshDueAt] is `ApiHolder`'s copy of [Session.refreshDueAtEpochSec], read on every
+ * request to skip the lock while no refresh is due. It only decides whether to look: whether to
+ * refresh is decided from the store.
  */
 class TokenRefresher(
     private val sessionStore: SessionStore,
     private val clock: () -> Long,
+    private val cachedRefreshDueAt: () -> Long?,
     private val refreshApi: (serverUrl: String) -> RefreshApi,
 ) {
     private val lock = Any()
+
+    /**
+     * Before a request goes out with [currentToken]: a new token when the current one is about to
+     * expire, otherwise [currentToken]. An early refresh that fails or is refused never fails the
+     * request, which goes out with [currentToken] while it still works; the 401 that follows its
+     * expiry is where a refused refresh token is dropped and a failure is reported.
+     */
+    fun beforeExpiry(currentToken: String): String {
+        if (!isDue(cachedRefreshDueAt())) return currentToken
+        synchronized(lock) {
+            val stored = storedSession()
+            val current = stored.token ?: return currentToken
+            // A token another request has just refreshed is not due, so it goes out as it is.
+            if (!isDue(stored.refreshDueAtEpochSec)) return current
+            val refreshToken = stored.refreshToken ?: return current
+            val serverUrl = stored.serverUrl ?: return current
+            return try {
+                trade(serverUrl, refreshToken) ?: current.also {
+                    Log.w(TAG, "The server refused an early refresh; sending the request with the current token.")
+                }
+            } catch (e: IOException) {
+                Log.w(TAG, "Early refresh failed; sending the request with the current token.", e)
+                current
+            }
+        }
+    }
+
+    private fun isDue(refreshDueAt: Long?) = refreshDueAt != null && clock() >= refreshDueAt
 
     /**
      * After a request sent with [failedToken] got a 401: the token to send it again with, or null

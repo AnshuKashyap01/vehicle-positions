@@ -49,6 +49,19 @@ data class Session(
         return nowEpochSec < expiresAt
     }
 
+    /**
+     * When to refresh the access token before it expires, so requests don't meet a 401: a minute
+     * early, or halfway through a lifetime shorter than two minutes. Null when there is no refresh
+     * token, or no expiry to count from.
+     */
+    val refreshDueAtEpochSec: Long?
+        get() {
+            if (refreshToken == null) return null
+            val expiresAt = accessExpiresAtEpochSec ?: return null
+            val issuedAt = issuedAtEpochSec ?: return null
+            return expiresAt - minOf(MAX_EARLY_REFRESH_SEC, (expiresAt - issuedAt) / 2)
+        }
+
     /** The signed-in driver's user id on the server, or null when there is no readable token. */
     val driverId: String? get() = token?.let(::jwtSubject)
 }
@@ -58,6 +71,8 @@ data class Session(
  * no refresh token, so it is held to the same 24 hours from sign-in.
  */
 private const val OLD_BUILD_TOKEN_LIFETIME_SEC = 24 * 3600L
+
+private const val MAX_EARLY_REFRESH_SEC = 60L
 
 /**
  * The `sub` claim of the server's JWT, which is the user id `/trips/end` checks a trip against.

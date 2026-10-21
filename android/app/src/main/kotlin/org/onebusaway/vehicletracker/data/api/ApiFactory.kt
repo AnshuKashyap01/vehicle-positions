@@ -15,19 +15,27 @@ private val TOKEN_EXCHANGE_PATHS = listOf("/api/v1/auth/login", "/api/v1/auth/re
 
 private fun Request.isTokenExchange() = TOKEN_EXCHANGE_PATHS.any { url.encodedPath.endsWith(it) }
 
-class AuthInterceptor(private val tokenProvider: () -> String?) : Interceptor {
+/**
+ * Adds the access token to each request, refreshing it first through [refresher] when it is about
+ * to expire.
+ */
+class AuthInterceptor(
+    private val refresher: TokenRefresher? = null,
+    private val tokenProvider: () -> String?,
+) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
-        val token = tokenProvider()
-        val request = if (token != null && !chain.request().isTokenExchange()) {
-            chain.request().newBuilder().header("Authorization", "Bearer $token").build()
-        } else chain.request()
-        return chain.proceed(request)
+        val request = chain.request()
+        if (request.isTokenExchange()) return chain.proceed(request)
+        val cached = tokenProvider() ?: return chain.proceed(request)
+        val token = refresher?.beforeExpiry(cached) ?: cached
+        return chain.proceed(request.newBuilder().header("Authorization", "Bearer $token").build())
     }
 }
 
 /**
- * Builds the app's [TrackerApi]. Given a [refresher], its client also refreshes the access token
- * after a 401 and sends the request again.
+ * Builds the app's [TrackerApi]. Given a [refresher], its client also keeps the access token
+ * fresh: it refreshes a token about to expire before the request, and one that got a 401 after it,
+ * sending the request again.
  */
 class ApiFactory(
     private val refresher: TokenRefresher? = null,
@@ -44,7 +52,7 @@ class ApiFactory(
         .build()
 
     private val client = baseClient.newBuilder()
-        .addInterceptor(AuthInterceptor(tokenProvider))
+        .addInterceptor(AuthInterceptor(refresher, tokenProvider))
         .apply { if (refresher != null) authenticator(TokenAuthenticator(refresher)) }
         .build()
 

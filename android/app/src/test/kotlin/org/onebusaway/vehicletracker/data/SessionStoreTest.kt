@@ -300,6 +300,20 @@ class SessionStoreTest {
         assertFalse(Session(SERVER, null, ISSUED_AT, REFRESH_TOKEN, EXPIRES_AT).isSignedIn(ISSUED_AT))
     }
 
+    @Test fun `a token is refreshed a minute before it expires, or halfway through a shorter life`() {
+        fun dueAfterIssue(lifetimeSec: Long) =
+            Session(SERVER, TOKEN, ISSUED_AT, REFRESH_TOKEN, ISSUED_AT + lifetimeSec).refreshDueAtEpochSec!! - ISSUED_AT
+
+        assertEquals(24 * 3600L - 60, dueAfterIssue(24 * 3600L))
+        assertEquals(60L, dueAfterIssue(120L))
+        assertEquals(30L, dueAfterIssue(60L))
+    }
+
+    @Test fun `a token with nothing to refresh it with, or no known expiry, is never due a refresh`() {
+        assertNull(Session(SERVER, TOKEN, ISSUED_AT, refreshToken = null, accessExpiresAtEpochSec = EXPIRES_AT).refreshDueAtEpochSec)
+        assertNull(Session(SERVER, TOKEN, ISSUED_AT).refreshDueAtEpochSec)
+    }
+
     /** Stands in for storage that cannot be read at all, so the failure paths are reachable. */
     private class FailingDataStore(private val failure: Throwable) : DataStore<Preferences> {
         override val data: Flow<Preferences> = flow { throw failure }
