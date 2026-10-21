@@ -25,6 +25,9 @@ jobs:
         run: ./gradlew :app:assembleDebug
       - name: Unit tests
         run: ./gradlew :app:testDebugUnitTest
+      # `./gradlew build` runs lint, so a lint error the CI never saw would fail it for anyone else.
+      - name: Lint
+        run: ./gradlew :app:lintDebug
       - name: Build release
         run: ./gradlew :app:assembleRelease
 
