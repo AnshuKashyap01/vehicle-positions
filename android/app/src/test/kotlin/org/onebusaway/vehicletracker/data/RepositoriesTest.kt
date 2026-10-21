@@ -65,12 +65,6 @@ class RepositoriesTest {
         server.shutdown()
     }
 
-    @Test fun `hasFreshToken is false after 24h`() {
-        val s = Session("u", "t", issuedAtEpochSec = 0L)
-        assertTrue(s.hasFreshToken(nowEpochSec = 24 * 3600 - 1))
-        assertTrue(!s.hasFreshToken(nowEpochSec = 24 * 3600))
-    }
-
     @Test fun `trip start saves the catalog's service date, not the device's calendar date`() = runTest {
         val server = MockWebServer().apply { start() }
         server.enqueue(MockResponse().setResponseCode(201).setBody(
@@ -518,14 +512,14 @@ class RepositoriesTest {
         val sessions = FakeSessionStore()
         sessions.state.value = Session("http://example.com", "jwt", 1L)
         val neverRunsScope = CoroutineScope(Job().apply { cancel() })
-        val holder = ApiHolder(sessions, neverRunsScope)
+        val holder = ApiHolder(sessions, neverRunsScope, clock = { 0L })
 
         // Must not throw despite the async collector never having run.
         holder.api()
     }
 
     @Test fun `vehicle repository returns failure instead of throwing when session has no server url`() = runTest {
-        val holder = ApiHolder(FakeSessionStore(), CoroutineScope(Job().apply { cancel() }))
+        val holder = ApiHolder(FakeSessionStore(), CoroutineScope(Job().apply { cancel() }), clock = { 0L })
         val repo = VehicleRepository(TrackerApiProvider(holder::api))
 
         val result = repo.myVehicles()
@@ -535,7 +529,7 @@ class RepositoriesTest {
     }
 
     @Test fun `trip repository returns failure instead of throwing when session has no server url`() = runTest {
-        val holder = ApiHolder(FakeSessionStore(), CoroutineScope(Job().apply { cancel() }))
+        val holder = ApiHolder(FakeSessionStore(), CoroutineScope(Job().apply { cancel() }), clock = { 0L })
         val repo = TripRepository(TrackerApiProvider(holder::api), FakeTripStateStore(), FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
 
         val result = repo.start("bus-1", "5", "trip-1", "20260804")

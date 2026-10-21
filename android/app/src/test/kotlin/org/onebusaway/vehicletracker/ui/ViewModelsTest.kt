@@ -155,6 +155,20 @@ class ViewModelsTest {
         assertEquals("login", vm.startDestination.value)
     }
 
+    // Signed in a day and an hour ago: the 24 hours the old check allowed are over too.
+    @Test fun noTrip_andExpiredToken_withRefreshToken_goesToVehicles() = runTest(dispatcher) {
+        val vm = appNavViewModel(
+            session = freshSession.copy(
+                issuedAtEpochSec = launchNow - 25 * 3600,
+                refreshToken = "r1",
+                accessExpiresAtEpochSec = launchNow - 3600,
+            ),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("vehicles", vm.startDestination.value)
+    }
+
     @Test fun storedTrip_withServiceActive_goesStraightToTracking() = runTest(dispatcher) {
         // The shift is still reporting: the task was swiped away, or START_STICKY restarted the
         // service. Prompting here would interrupt a healthy shift every time the app is opened.

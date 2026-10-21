@@ -1,5 +1,6 @@
 package org.onebusaway.vehicletracker.data.api
 
+import retrofit2.Call
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -23,6 +24,15 @@ interface TrackerApi {
     suspend fun trip(@Path("trip_id") tripId: String): TripGeometryDto
 
     @GET("api/v1/map") suspend fun mapConfig(): MapConfigDto
+}
+
+/**
+ * `POST /api/v1/auth/refresh`, for [TokenRefresher] only. It blocks, because OkHttp calls the
+ * refresher on its own threads, and returns the whole [retrofit2.Response], so a refused refresh
+ * token (401) can be told from a server that can't refresh right now (5xx, 429) without exceptions.
+ */
+interface RefreshApi {
+    @POST("api/v1/auth/refresh") fun refresh(@Body body: RefreshRequest): Call<LoginResponse>
 }
 
 /**

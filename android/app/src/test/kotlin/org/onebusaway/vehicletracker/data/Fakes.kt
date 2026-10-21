@@ -54,6 +54,10 @@ class FakeSessionStore : SessionStore {
     override suspend fun saveLogin(serverUrl: String, tokens: IssuedTokens) {
         state.value = Session(serverUrl, tokens.accessToken, tokens.issuedAtEpochSec, tokens.refreshToken, tokens.accessExpiresAtEpochSec)
     }
+    override suspend fun saveRefreshed(tokens: IssuedTokens) {
+        state.value = Session(state.value.serverUrl, tokens.accessToken, tokens.issuedAtEpochSec, tokens.refreshToken, tokens.accessExpiresAtEpochSec)
+    }
+    override suspend fun dropRefreshToken() { state.value = state.value.copy(refreshToken = null) }
     override suspend fun clearToken() {
         state.value = state.value.copy(token = null, issuedAtEpochSec = null, refreshToken = null, accessExpiresAtEpochSec = null)
     }

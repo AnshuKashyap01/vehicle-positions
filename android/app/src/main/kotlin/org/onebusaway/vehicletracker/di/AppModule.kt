@@ -27,6 +27,7 @@ import org.onebusaway.vehicletracker.data.sessionDataStore
 import org.onebusaway.vehicletracker.data.tripStateDataStore
 import org.onebusaway.vehicletracker.data.vehiclePrefsDataStore
 import org.onebusaway.vehicletracker.data.api.ApiFactory
+import org.onebusaway.vehicletracker.data.api.TokenRefresher
 import org.onebusaway.vehicletracker.data.api.TrackerApi
 import org.onebusaway.vehicletracker.data.api.TrackerApiProvider
 import org.onebusaway.vehicletracker.data.map.MapFileDownloader
@@ -72,8 +73,11 @@ annotation class ServiceAnnounceGrace
  * the time [api] is first called (e.g. `VehicleScreen`'s ViewModel is constructed immediately
  * after a fresh login token was persisted) — [api] guards against that race by synchronously
  * seeding itself from the store exactly once, the first time it's called, via [ensureSeeded].
+ *
+ * The cache is only ever the token to send. Refreshing it is [TokenRefresher]'s, which reads the
+ * store itself rather than this copy, because the copy can lag a save.
  */
-class ApiHolder(private val sessionStore: SessionStore, scope: CoroutineScope) {
+class ApiHolder(private val sessionStore: SessionStore, scope: CoroutineScope, clock: () -> Long) {
     @Volatile private var token: String? = null
     @Volatile private var serverUrl: String? = null
     @Volatile private var seeded = false
@@ -81,7 +85,11 @@ class ApiHolder(private val sessionStore: SessionStore, scope: CoroutineScope) {
     @Volatile private var cachedApiUrl: String? = null
     private val seedLock = Any()
 
-    val apiFactory = ApiFactory { token }
+    // The refresher calls the server through apiFactory, which is built just below and long before
+    // any request can need a refresh.
+    private val refresher = TokenRefresher(sessionStore, clock) { url -> apiFactory.createRefreshApi(url) }
+
+    val apiFactory: ApiFactory = ApiFactory(refresher) { token }
 
     init {
         sessionStore.session
@@ -160,8 +168,11 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideApiHolder(sessionStore: SessionStore, scope: CoroutineScope): ApiHolder =
-        ApiHolder(sessionStore, scope)
+    fun provideApiHolder(
+        sessionStore: SessionStore,
+        scope: CoroutineScope,
+        @EpochSecondsClock clock: () -> Long,
+    ): ApiHolder = ApiHolder(sessionStore, scope, clock)
 
     @Provides
     @Singleton

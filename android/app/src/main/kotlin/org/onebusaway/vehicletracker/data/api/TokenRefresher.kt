@@ -1,0 +1,133 @@
+package org.onebusaway.vehicletracker.data.api
+
+import android.util.Log
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.SerializationException
+import okhttp3.Authenticator
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.Route
+import org.onebusaway.vehicletracker.data.IssuedTokens
+import org.onebusaway.vehicletracker.data.Session
+import org.onebusaway.vehicletracker.data.SessionStore
+import org.onebusaway.vehicletracker.data.issuedAt
+import java.io.IOException
+import java.security.GeneralSecurityException
+
+private const val TAG = "TokenRefresher"
+
+/**
+ * Trades the stored refresh token for a new access token, for the client [ApiFactory] builds.
+ *
+ * One trade at a time, starting from the stored session. The server takes a second use of a
+ * refresh token for theft and revokes every refresh token the driver holds, so two requests
+ * refreshing together would sign the driver out. Each trade runs under one lock and begins by
+ * reading the session from [sessionStore], never from a cached copy such as `ApiHolder`'s: that
+ * copy can lag a save, and a lagging copy would present a token the server has already spent.
+ * When the stored access token is no longer the one the caller sent, another request has
+ * refreshed in the meantime, and the caller gets the new token without a call to the server.
+ *
+ * It blocks, holding the lock across the call to the server. OkHttp calls it on its own threads,
+ * where that is fine, and a request that waits is one that would otherwise have refreshed again.
+ */
+class TokenRefresher(
+    private val sessionStore: SessionStore,
+    private val clock: () -> Long,
+    private val refreshApi: (serverUrl: String) -> RefreshApi,
+) {
+    private val lock = Any()
+
+    /**
+     * After a request sent with [failedToken] got a 401: the token to send it again with, or null
+     * when there is none and the 401 stands. A refused refresh token is dropped and the access
+     * token kept until it fails on its own, so the next 401 reaches the caller, which asks the
+     * driver to sign in.
+     *
+     * @throws IOException when the server can't be reached or can't refresh right now. Both
+     *   tokens are kept, so the next request tries again.
+     */
+    @Throws(IOException::class)
+    fun afterUnauthorized(failedToken: String): String? {
+        synchronized(lock) {
+            val stored = storedSession()
+            val current = stored.token ?: return null
+            if (current != failedToken) return current
+            val refreshToken = stored.refreshToken ?: return null
+            val serverUrl = stored.serverUrl ?: return null
+            val refreshed = trade(serverUrl, refreshToken)
+            if (refreshed == null) {
+                Log.w(TAG, "The server refused the refresh token; the driver signs in again at the next 401.")
+                dropRefreshToken()
+            }
+            return refreshed
+        }
+    }
+
+    private fun storedSession(): Session = runBlocking { sessionStore.session.first() }
+
+    /**
+     * Presents [refreshToken] once and saves the pair the server hands back. Returns the new
+     * access token, or null when the server refused the refresh token.
+     *
+     * @throws IOException when the server can't be reached or answers anything else.
+     */
+    private fun trade(serverUrl: String, refreshToken: String): String? {
+        val reply = try {
+            refreshApi(serverUrl).refresh(RefreshRequest(refreshToken)).execute()
+        } catch (e: SerializationException) {
+            // A 200 that is not a token pair, such as a captive portal's page. The server may
+            // never have seen the refresh token, so it is kept for the next request.
+            throw IOException("The refresh reply could not be read", e)
+        }
+        val issued = reply.body()
+        return when {
+            reply.isSuccessful && issued != null -> {
+                save(issued.issuedAt(clock()))
+                issued.accessToken
+            }
+            reply.code() == 401 -> null
+            else -> throw IOException("Refresh failed with HTTP ${reply.code()}")
+        }
+    }
+
+    /**
+     * The server spent the old refresh token when it answered, so a pair that can't be saved costs
+     * the old one too: presented again, it would revoke every refresh token the driver holds. The
+     * new access token is still returned, for the request that is waiting on it.
+     */
+    private fun save(tokens: IssuedTokens) {
+        try {
+            runBlocking { sessionStore.saveRefreshed(tokens) }
+        } catch (e: GeneralSecurityException) {
+            Log.w(TAG, "Could not encrypt the refreshed tokens; dropping the spent refresh token.", e)
+            dropRefreshToken()
+        } catch (e: IOException) {
+            Log.w(TAG, "Could not save the refreshed tokens; dropping the spent refresh token.", e)
+            dropRefreshToken()
+        }
+    }
+
+    private fun dropRefreshToken() {
+        try {
+            runBlocking { sessionStore.dropRefreshToken() }
+        } catch (e: IOException) {
+            Log.w(TAG, "Could not drop the refresh token.", e)
+        }
+    }
+}
+
+/**
+ * Refreshes after a 401 and sends the request again, once. A request that went out without an
+ * access token, such as a sign-in, is left alone: a wrong password must not quietly refresh the
+ * session of whoever signed in on this phone before.
+ */
+class TokenAuthenticator(private val refresher: TokenRefresher) : Authenticator {
+    override fun authenticate(route: Route?, response: Response): Request? {
+        val sent = response.request.header("Authorization")?.removePrefix("Bearer ") ?: return null
+        if (response.priorResponse?.code == 401) return null
+        val token = refresher.afterUnauthorized(sent) ?: return null
+        // The request goes again without passing AuthInterceptor, so the header is set here.
+        return response.request.newBuilder().header("Authorization", "Bearer $token").build()
+    }
+}
