@@ -18,6 +18,14 @@ type ApiKey struct {
 	UpdatedAt  pgtype.Timestamptz
 }
 
+type GtfsFeedCache struct {
+	ID        int16
+	Source    string
+	Body      []byte
+	Sha256    []byte
+	FetchedAt pgtype.Timestamptz
+}
+
 type LocationPoint struct {
 	ID         int64
 	VehicleID  string

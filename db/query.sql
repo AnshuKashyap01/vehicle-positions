@@ -355,3 +355,15 @@ DELETE FROM refresh_tokens WHERE user_id = $1;
 -- consumed row is worth keeping only so a replay reads as reuse rather than
 -- as unknown, and this predicate already keeps it until expires_at.
 DELETE FROM refresh_tokens WHERE expires_at < sqlc.arg('cutoff');
+
+-- name: GetGTFSFeedCache :one
+SELECT source, body, fetched_at FROM gtfs_feed_cache WHERE id = 1;
+
+-- name: GetGTFSFeedCacheDigest :one
+SELECT source, sha256 FROM gtfs_feed_cache WHERE id = 1;
+
+-- name: UpsertGTFSFeedCache :exec
+INSERT INTO gtfs_feed_cache (id, source, body, sha256, fetched_at)
+VALUES (1, $1, $2, $3, NOW())
+ON CONFLICT (id) DO UPDATE
+SET source = EXCLUDED.source, body = EXCLUDED.body, sha256 = EXCLUDED.sha256, fetched_at = NOW();
