@@ -167,4 +167,25 @@ import Testing
         #expect(await refresher(store).beforeExpiry(observedToken: "a1", refresh: refresh.call) == "a1")
         #expect(try store.load() == aboutToExpire)
     }
+
+    /// A request turned away while an early refresh is out joins it. If the
+    /// server refuses that refresh, the 401 drops the refresh token as it would
+    /// after a refresh of its own, so the next request doesn't present it again.
+    @Test func a401ThatJoinsARefusedEarlyRefreshDropsTheRefreshToken() async throws {
+        let store = ScriptedTokenStore(aboutToExpire)
+        let refresher = refresher(store)
+        let refresh = ScriptedRefresh()
+        async let early = refresher.beforeExpiry(observedToken: "a1", refresh: refresh.call)
+        #expect(await eventually { refresh.presented.count == 1 })
+        async let turnedAway = refresher.afterUnauthorized(failedToken: "a1", refresh: refresh.call)
+        #expect(await eventually { store.loads == 2 })
+        refresh.answer(.refused)
+
+        #expect(await early == "a1")
+        #expect(await turnedAway == .refused)
+        #expect(refresh.presented == ["r1"])
+        var dropped = aboutToExpire
+        dropped.refreshToken = nil
+        #expect(try store.load() == dropped)
+    }
 }

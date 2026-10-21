@@ -74,10 +74,16 @@ actor TokenRefresher {
             task = inFlight
         } else {
             guard let refreshToken = stored.refreshToken else { return .refused }
-            task = Task { await trade(refreshToken, dropIfRefused: true, refresh: refresh) }
+            task = Task { await trade(refreshToken, refresh: refresh) }
             inFlight = task
         }
-        return await task.value
+        let outcome = await task.value
+        // Also when the refused refresh was an early one this request joined,
+        // which keeps the token for requests whose access token still works.
+        if outcome == .refused, let refreshToken = stored.refreshToken {
+            dropRefreshToken(refreshToken)
+        }
+        return outcome
     }
 
     /// Whether `stored`'s access token is due a refresh before it expires.
@@ -101,7 +107,7 @@ actor TokenRefresher {
             task = inFlight
         } else {
             guard isRefreshDue(stored), let refreshToken = stored.refreshToken else { return observedToken }
-            task = Task { await trade(refreshToken, dropIfRefused: false, refresh: refresh) }
+            task = Task { await trade(refreshToken, refresh: refresh) }
             inFlight = task
         }
         if case .retry(let renewed) = await task.value { return renewed }
@@ -109,18 +115,14 @@ actor TokenRefresher {
     }
 
     /// Presents `refreshToken` once and saves the pair the server hands back.
-    private func trade(_ refreshToken: String, dropIfRefused: Bool, refresh: Refresh) async -> Outcome {
+    private func trade(_ refreshToken: String, refresh: Refresh) async -> Outcome {
         defer { inFlight = nil }
         switch await refresh(refreshToken) {
         case .issued(let issued):
             save(issued, spending: refreshToken)
             return .retry(issued.accessToken)
-        case .refused where dropIfRefused:
-            log.warning("the server refused the refresh token; the driver signs in again")
-            dropRefreshToken(refreshToken)
-            return .refused
         case .refused:
-            log.warning("the server refused an early refresh; the request goes out with the current token")
+            log.warning("the server refused the refresh token")
             return .refused
         case .unreachable(let message):
             log.warning("could not refresh; keeping both tokens for the next request: \(message)")
