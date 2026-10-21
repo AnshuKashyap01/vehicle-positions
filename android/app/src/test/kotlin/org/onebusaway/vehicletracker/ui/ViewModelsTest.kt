@@ -549,7 +549,8 @@ class ViewModelsTest {
     /**
      * Builds a [RunsViewModel] over a `MockWebServer` answering the trips call with [tripsBody],
      * every geometry fetch with [geometry], each start with the next of [startResponses], and
-     * every end with [endResponse], loads route R1 at wall-clock time [now], and runs [block] against it.
+     * every end with [endResponse], loads route R1 at wall-clock time [now] (or on [wallClock], for a test that moves
+     * the time on), and runs [block] against it.
      */
     private fun withRunsViewModel(
         tripsBody: String = twoRunsJson,
@@ -559,6 +560,7 @@ class ViewModelsTest {
         endResponse: () -> MockResponse = { MockResponse().setBody("""{"status":"trip ended"}""") },
         geometryStore: TripGeometryStore = FakeTripGeometryStore(),
         extraArgs: Map<String, String> = emptyMap(),
+        wallClock: (() -> Long)? = null,
         block: (RunsViewModel, MockWebServer, FakeServiceController, FakeTripStateStore) -> Unit,
     ) {
         val server = MockWebServer().apply { start() }
@@ -576,7 +578,7 @@ class ViewModelsTest {
         try {
             val provider = TrackerApiProvider { ApiFactory { "jwt" }.create(server.url("/").toString()) }
             val nowEpochSec = OffsetDateTime.parse(now).toEpochSecond()
-            val clock = { nowEpochSec }
+            val clock = wallClock ?: { nowEpochSec }
             val tripState = FakeTripStateStore()
             val tripRepository = TripRepository(provider, tripState, FakeVehiclePrefsStore(), FakeSessionStore(), clock = clock)
             val serviceController = FakeServiceController()
@@ -614,6 +616,55 @@ class ViewModelsTest {
             val runs = loadedRuns(vm).boards.flatMap { it.runs }.associateBy { it.id }
             assertEquals(RunHighlight.NEXT, runs.getValue("T4").highlight)
             assertTrue("the run before it has gone", runs.getValue("T1").past)
+        }
+    }
+
+    @Test fun `while the step is on screen the boards move on at each new minute`() = runTest(dispatcher) {
+        var nowEpochSec = OffsetDateTime.parse("2026-09-22T08:05:30-07:00").toEpochSecond()
+        withRunsViewModel(wallClock = { nowEpochSec }) { vm, _, _, _ ->
+            fun runs() = (vm.uiState.value as RunsUiState.Loaded).boards.flatMap { it.runs }.associateBy { it.id }
+            assertEquals(RunHighlight.NOW, loadedRuns(vm).boards.flatMap { it.runs }.single { it.id == "T1" }.highlight)
+
+            vm.onScreenVisible(true)
+            // Stopped whatever happens: a ticker left running would keep later tests' advanceUntilIdle from ending.
+            try {
+                dispatcher.scheduler.runCurrent()
+                // T1 is over by 09:00, but the board waits for the minute to turn rather than rebuilding all the time.
+                nowEpochSec = OffsetDateTime.parse("2026-09-22T09:00:00-07:00").toEpochSecond()
+                dispatcher.scheduler.advanceTimeBy(29_999)
+                dispatcher.scheduler.runCurrent()
+                assertEquals(RunHighlight.NOW, runs().getValue("T1").highlight)
+
+                dispatcher.scheduler.advanceTimeBy(1)
+                dispatcher.scheduler.runCurrent()
+                assertTrue("T1 has gone", runs().getValue("T1").past)
+                assertEquals(RunHighlight.NEXT, runs().getValue("T4").highlight)
+            } finally {
+                vm.onScreenVisible(false)
+            }
+        }
+    }
+
+    @Test fun `off screen the boards stay put, and catch up as soon as the step is back`() = runTest(dispatcher) {
+        var nowEpochSec = OffsetDateTime.parse("2026-09-22T08:05:30-07:00").toEpochSecond()
+        withRunsViewModel(wallClock = { nowEpochSec }) { vm, _, _, _ ->
+            fun t1() = (vm.uiState.value as RunsUiState.Loaded).boards.flatMap { it.runs }.single { it.id == "T1" }
+            try {
+                vm.onScreenVisible(true)
+                dispatcher.scheduler.runCurrent()
+                vm.onScreenVisible(false)
+
+                nowEpochSec = OffsetDateTime.parse("2026-09-22T09:00:00-07:00").toEpochSecond()
+                dispatcher.scheduler.advanceTimeBy(10 * 60_000)
+                dispatcher.scheduler.runCurrent()
+                assertEquals(RunHighlight.NOW, t1().highlight)
+
+                vm.onScreenVisible(true)
+                dispatcher.scheduler.runCurrent()
+                assertTrue("T1 has gone", t1().past)
+            } finally {
+                vm.onScreenVisible(false)
+            }
         }
     }
 

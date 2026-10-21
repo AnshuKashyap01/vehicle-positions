@@ -4,6 +4,8 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +30,9 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import javax.inject.Inject
+
+private const val SECONDS_PER_MINUTE = 60
+private const val MILLIS_PER_SECOND = 1000L
 
 /** Why a run could not be started, in the terms the driver is shown. */
 enum class TripError { NOT_ASSIGNED, TRIP_ACTIVE, PREVIOUS_TRIP_NOT_ENDED, NETWORK, NO_GEOMETRY, TRIP_NOT_ACTIVE, OTHER }
@@ -82,16 +87,25 @@ class RunsViewModel @Inject constructor(
         textColor = savedStateHandle[ARG_ROUTE_TEXT_COLOR] ?: "",
     )
 
-    // The driver's own way of writing a time, read once: the board formats every run's start when it loads.
+    // The driver's own way of writing a time, read once: the board formats every run's start when it is built.
     private val timeFormat = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT)
 
-    /** null while a load is in flight; otherwise the outcome of the last one, with its boards built. */
-    private val loadResult = MutableStateFlow<Result<Pair<RunPage, DepartureBoards>>?>(null)
+    /** null while a load is in flight; otherwise the outcome of the last one. */
+    private val loadResult = MutableStateFlow<Result<RunPage>?>(null)
+
+    /** The time the boards are built for: set by each load, and moved on each minute while the step is on screen. */
+    private val now = MutableStateFlow(Instant.ofEpochSecond(clock()))
+    private var ticking: Job? = null
+
     private val startingRun = MutableStateFlow<String?>(null)
     private val startError = MutableStateFlow<TripError?>(null)
 
+    private val boards = combine(loadResult, now) { result, now ->
+        result?.mapCatching { page -> page to departureBoardsOf(page, now, timeFormat) }
+    }
+
     val uiState: StateFlow<RunsUiState> = combine(
-        loadResult,
+        boards,
         startingRun,
         startError,
     ) { result, startingRunId, error ->
@@ -117,6 +131,22 @@ class RunsViewModel @Inject constructor(
 
     fun retry() = load()
 
+    /**
+     * Runs go by while the driver looks at the board, so while this step is on screen its boards are built again at
+     * each new minute: which runs are dimmed as gone, where the Now line sits, and which run is tagged Now or Next.
+     */
+    fun onScreenVisible(visible: Boolean) {
+        ticking?.cancel()
+        ticking = if (visible) viewModelScope.launch { tickEachMinute() } else null
+    }
+
+    private suspend fun tickEachMinute() {
+        while (true) {
+            now.value = Instant.ofEpochSecond(clock())
+            delay((SECONDS_PER_MINUTE - clock() % SECONDS_PER_MINUTE) * MILLIS_PER_SECOND)
+        }
+    }
+
     private fun load() {
         loadResult.value = null
         // Whatever refused a start against the old list — a run gone out of service — is not
@@ -125,10 +155,9 @@ class RunsViewModel @Inject constructor(
         viewModelScope.launch {
             // mapCatching: a zone or a schedule time this platform cannot read is a bad reply,
             // not a crash — the screen offers a retry as it would for any other failed load.
-            loadResult.value = catalogRepository.trips(routeId).mapCatching { dto ->
-                val page = dto.toRunPage()
-                page to departureBoardsOf(page, Instant.ofEpochSecond(clock()), timeFormat)
-            }
+            val result = catalogRepository.trips(routeId).mapCatching { it.toRunPage() }
+            now.value = Instant.ofEpochSecond(clock())
+            loadResult.value = result
         }
     }
 
