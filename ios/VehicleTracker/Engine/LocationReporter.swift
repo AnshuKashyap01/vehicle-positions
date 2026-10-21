@@ -47,7 +47,8 @@ final class LocationReporter {
     /// one is still in flight. The outcome lands in `problem` and `fixesSent`
     /// later, and `onChange` fires when it does.
     @discardableResult
-    func report(_ fix: LocationFix, vehicleID: String, gtfsTripID: String) -> Bool {
+    func report(_ fix: LocationFix, vehicleID: String, gtfsTripID: String,
+                routeID: String = "", startDate: String = "") -> Bool {
         let at = now()
         if let last = lastSentAt, at.timeIntervalSince(last) < Self.minimumInterval {
             return false
@@ -65,7 +66,9 @@ final class LocationReporter {
             bearing: (0...360).contains(fix.course) ? fix.course : nil,
             speed: max(fix.speed, 0),
             accuracy: fix.horizontalAccuracy >= 0 ? fix.horizontalAccuracy : nil,
-            timestamp: Int64(fix.timestamp.timeIntervalSince1970)
+            timestamp: Int64(fix.timestamp.timeIntervalSince1970),
+            routeID: routeID.isEmpty ? nil : routeID,
+            startDate: startDate.isEmpty ? nil : startDate
         )
         isSending = true
         sendTask = Task { [weak self] in

@@ -78,11 +78,18 @@ nonisolated struct LocationReport: Sendable, Codable, Equatable {
     var accuracy: Double?
     /// Unix seconds of the fix.
     var timestamp: Int64
+    /// The GTFS route_id. With `startDate` it lets a consumer match the trip
+    /// by route, and tell apart a trip id that repeats on another day.
+    var routeID: String? = nil
+    /// The trip's service date, YYYYMMDD in the agency's local time.
+    var startDate: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case latitude, longitude, bearing, speed, accuracy, timestamp
         case vehicleID = "vehicle_id"
         case tripID = "trip_id"
+        case routeID = "route_id"
+        case startDate = "start_date"
     }
 }
 

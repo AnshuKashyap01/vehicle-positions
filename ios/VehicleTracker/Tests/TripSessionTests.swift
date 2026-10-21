@@ -378,6 +378,9 @@ import VehiclePositionsKit
         locations.emitFix(lat: 47.6045, lon: -122.3300, at: TripFixtures.at(8, 5))
         #expect(await eventually { api.posted.count == 1 })
         #expect(api.posted[0].tripID == "T1")
+        // The same TripDescriptor fields Android sends.
+        #expect(api.posted[0].routeID == TripFixtures.t1.routeID)
+        #expect(api.posted[0].startDate == TripFixtures.t1.serviceDate)
 
         try await s.end()
         #expect(api.ends == [7])

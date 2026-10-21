@@ -405,7 +405,8 @@ final class TripSession {
             if judged.isOnRoute { latestOnRoute = judged }
             // Not awaited: the send runs on its own so the fixes behind it
             // keep reaching the map (spec §8).
-            reporter.report(fix, vehicleID: active.vehicle.id, gtfsTripID: active.trip.id)
+            reporter.report(fix, vehicleID: active.vehicle.id, gtfsTripID: active.trip.id,
+                            routeID: active.trip.routeID, startDate: active.trip.serviceDate)
         }
         refreshReporting()
     }
