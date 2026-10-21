@@ -75,6 +75,8 @@
     <string name="runs_title">Choose a run</string>
     <!-- The route's number, e.g. "No runs on route 7 today". -->
     <string name="runs_empty">No runs on route %1$s today</string>
+    <!-- The same, for a route whose feed gave no short name. -->
+    <string name="runs_empty_unnamed">No runs on this route today</string>
     <string name="runs_empty_detail">Pick another route, or check again tomorrow.</string>
     <string name="runs_choose_another_route">Choose another route</string>
     <!-- On the run under way or next to start, and, for TalkBack, on the line between the runs gone and the rest. -->

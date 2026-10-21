@@ -35,6 +35,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.isSelectable
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -1054,6 +1055,40 @@ class ScreenFlowTest {
         compose.onNode(hasText(getString(R.string.runs_empty, "7")) and heading).assertIsDisplayed()
         compose.onNodeWithText(getString(R.string.runs_choose_another_route)).performClick()
         assertEquals(1, calls.anotherRoute)
+    }
+
+    @Test
+    fun runsScreen_saysThisRouteWhenTheRouteHasNoShortName() {
+        compose.setContent {
+            RunsScreenContent(
+                RunsUiState.Loaded(runPage, listOf(Board(null, emptyList(), null, 0)), 0, null, null),
+                RouteBadgeModel.of("", "", ""), "4317", onBack = {}, onBusClick = {}, onRouteClick = {},
+                onRunClick = {}, onReload = {}, onTryAgain = {}, onChangeBus = {}, onChooseAnotherRoute = {},
+            )
+        }
+
+        compose.onNode(hasText(getString(R.string.runs_empty_unnamed)) and heading).assertIsDisplayed()
+    }
+
+    @Test
+    fun runsScreen_restoredWithFewerDirectionsShowsTheOneLeft() {
+        val restoration = StateRestorationTester(compose)
+        var compositions = 0
+        restoration.setContent {
+            // The restored screen loads the runs again, and on a new service day only one direction runs.
+            val restored = remember { ++compositions > 1 }
+            RunsScreenContent(
+                if (restored) board(boards = listOf(inboundBoard)) else board(), badge7, "4317",
+                onBack = {}, onBusClick = {}, onRouteClick = {}, onRunClick = {}, onReload = {}, onTryAgain = {},
+                onChangeBus = {}, onChooseAnotherRoute = {},
+            )
+        }
+        compose.onNode(hasText(getString(R.string.runs_direction, "Mount Baker")) and isSelectable()).performClick()
+
+        restoration.emulateSavedInstanceStateRestore()
+
+        compose.onNode(isSelectable()).assertDoesNotExist()
+        compose.onNode(hasText("7:00") and hasClickAction()).assertIsDisplayed()
     }
 
     @Test

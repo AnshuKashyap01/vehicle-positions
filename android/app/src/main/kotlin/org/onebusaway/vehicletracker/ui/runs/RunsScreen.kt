@@ -160,7 +160,11 @@ fun RunsScreenContent(
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     EmptyState(
                         icon = R.drawable.ic_event_busy,
-                        title = stringResource(R.string.runs_empty, route.shortName),
+                        title = if (route.shortName.isBlank()) {
+                            stringResource(R.string.runs_empty_unnamed)
+                        } else {
+                            stringResource(R.string.runs_empty, route.shortName)
+                        },
                         body = stringResource(R.string.runs_empty_detail),
                         action = stringResource(R.string.runs_choose_another_route),
                         onAction = onChooseAnotherRoute,
@@ -182,7 +186,10 @@ private fun Departures(
     onTryAgain: () -> Unit,
     onChangeBus: () -> Unit,
 ) {
-    var selected by rememberSaveable { mutableIntStateOf(state.startBoard) }
+    var savedBoard by rememberSaveable { mutableIntStateOf(state.startBoard) }
+    // After the app is killed and restored, the runs are loaded again and can split into fewer boards than when the
+    // choice was saved: on a new service day only one direction may run.
+    val selected = savedBoard.coerceIn(state.boards.indices)
     // One list state per direction, each made already at its board's opening run, so the board appears there rather
     // than at the top and then scrolls; and switching back finds each direction where the driver left it.
     val listStates = state.boards.mapIndexed { index, board ->
@@ -204,7 +211,7 @@ private fun Departures(
         )
     }
     if (state.boards.size > 1) {
-        DirectionSwitch(state.boards, selected, onSelect = { selected = it })
+        DirectionSwitch(state.boards, selected, onSelect = { savedBoard = it })
     }
     BoardHeader(state.page.serviceDate, state.boards[selected].direction)
     ScrolledUnderDivider({ listStates[selected].canScrollBackward })
