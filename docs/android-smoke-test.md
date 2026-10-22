@@ -479,6 +479,57 @@ Within ~10 seconds of the network returning, the line goes away. GPS fixes
 captured while offline are dropped, not queued (v1 behavior): the counter should
 resume climbing from wherever it left off, not "catch up".
 
+### Check 3b: The sign-in renews itself during a trip
+
+The app trades its refresh token for a new access token a minute before the
+access token expires, and again after a `401`. This check shortens the access
+token's life to two minutes and makes the one on the phone invalid, then
+watches the app keep reporting without the driver doing anything.
+
+1. With the trip still running, restart the server with two-minute access
+   tokens and a **new** `JWT_SECRET`. The new secret makes the phone's access
+   token invalid at once. Refresh tokens live in the database, so the phone's
+   still works.
+
+   ```bash
+   kill $(lsof -nP -iTCP:$PORT -sTCP:LISTEN -t)
+   export JWT_SECRET=$(openssl rand -hex 32) ACCESS_TOKEN_TTL=2m
+   go run . > /tmp/vt-server.log 2>&1 &
+   ```
+
+2. Watch the reports and the refreshes for about ten minutes:
+
+   ```bash
+   grep -E '"path":"/api/v1/(locations|auth/refresh)"|"msg":"refresh' /tmp/vt-server.log
+   ```
+
+**Expected outcome:** the first report after the restart gets a `401`, followed
+at once by `refresh token rotated` and the same report again, answered `201`.
+After that, `refresh token rotated` appears about once a minute, every
+`/api/v1/locations` is answered `201`, and there is no other `401`. The app
+never shows **Signed out**, and its counter of sent reports keeps climbing. (A
+rare `429` is the server's limit of one report per 5 seconds, #171: a report
+held back by a slow refresh can arrive close behind the next one.)
+
+3. Deactivate the driver: open `$BASE/admin` in a browser and sign in as
+   `admin@test.com` again (the new secret ended that session too), then on
+   **Users** click **Deactivate** on the driver's row and confirm.
+
+**Expected outcome:** within about two minutes, when the access token on the
+phone runs out, **Signed out** takes the status card's place: "Reports have
+stopped. Your trip is still open." Deactivating deleted the driver's refresh
+tokens, so in the token's last minute the log shows each early refresh refused
+(`refresh: unknown token presented`) while reports still get `201`. Once the
+token expires, a report gets `401`, the refresh is refused once more, and every
+report after that gets `401` with no refresh.
+
+4. Click **Activate** on the same row. On the phone, tap **Sign in** on the
+   card and sign in as the driver.
+
+**Expected outcome:** back on the Tracking screen with the same trip, and
+reports reach the server again. The rest of the checks run the same with
+two-minute tokens, so leave `ACCESS_TOKEN_TTL` set.
+
 ### Check 4 — Swiping the app away doesn't stop tracking
 
 1. Remove the app from Recents (swipe away). On some emulator builds the

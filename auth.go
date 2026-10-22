@@ -73,14 +73,14 @@ type LoginRequest struct {
 // endpoint, so a client can parse both with one model.
 //
 // Token repeats AccessToken verbatim. It is the field the original
-// single-token response returned and the field every current client reads:
-// the Android app declares it non-nullable (`LoginResponse(val token:
-// String)`), so dropping it would not degrade to an empty string, it would
-// raise MissingFieldException on the next login. It is deprecated, not
-// supported — new clients should read access_token and refresh before
+// single-token response returned, and the iOS app and the simulator still
+// read it: the iOS app decodes it as a required field (`var token: String`),
+// so dropping it would not degrade to an empty string, it would fail the
+// next login. The Android app reads access_token. It is deprecated, not
+// supported: new clients should read access_token and refresh before
 // expires_in elapses.
 //
-// TODO: remove the deprecated "token" alias once the Android app and the
+// TODO: remove the deprecated "token" alias once the iOS app and the
 // simulator read access_token (target: the Milestone 3 release).
 type LoginResponse struct {
 	Token        string `json:"token"`
@@ -183,15 +183,14 @@ const sessionLifetime = 24 * time.Hour
 
 const (
 	// defaultAccessTokenTTL stays at the 24 hours main already issued. The
-	// refresh endpoint ships in this change, but the Android app cannot use
-	// it yet: TripReporter treats a 401 as AUTH_EXPIRED and stops reporting
-	// until the driver signs in again, so a short default would end every
-	// driver's location reports a few minutes into a shift. Deployments that
-	// have a client able to refresh can set ACCESS_TOKEN_TTL=15m today.
+	// Android app refreshes, but the iOS app cannot yet: it stops reporting
+	// when its token expires, until the driver signs in again, so a short
+	// default would end its location reports a few minutes into a shift.
+	// Deployments whose drivers all use the Android app can set
+	// ACCESS_TOKEN_TTL=15m today.
 	//
-	// TODO: drop this to 15 * time.Minute in the PR that teaches the Android
-	// client to refresh on 401 — that is the change that makes a short
-	// access token safe to default to.
+	// TODO: drop this to 15 * time.Minute once the iOS app refreshes too;
+	// that is the change that makes a short access token safe to default to.
 	defaultAccessTokenTTL  = 24 * time.Hour
 	defaultRefreshTokenTTL = 7 * 24 * time.Hour
 )

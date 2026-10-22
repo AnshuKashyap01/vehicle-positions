@@ -51,10 +51,16 @@ class FakeMapFileSource : MapFileSource {
 class FakeSessionStore : SessionStore {
     val state = MutableStateFlow(Session(null, null, null))
     override val session = state
-    override suspend fun saveLogin(serverUrl: String, token: String, issuedAtEpochSec: Long) {
-        state.value = Session(serverUrl, token, issuedAtEpochSec)
+    override suspend fun saveLogin(serverUrl: String, tokens: IssuedTokens) {
+        state.value = Session(serverUrl, tokens.accessToken, tokens.issuedAtEpochSec, tokens.refreshToken, tokens.accessExpiresAtEpochSec)
     }
-    override suspend fun clearToken() { state.value = state.value.copy(token = null, issuedAtEpochSec = null) }
+    override suspend fun saveRefreshed(tokens: IssuedTokens) {
+        state.value = Session(state.value.serverUrl, tokens.accessToken, tokens.issuedAtEpochSec, tokens.refreshToken, tokens.accessExpiresAtEpochSec)
+    }
+    override suspend fun dropRefreshToken() { state.value = state.value.copy(refreshToken = null) }
+    override suspend fun clearToken() {
+        state.value = state.value.copy(token = null, issuedAtEpochSec = null, refreshToken = null, accessExpiresAtEpochSec = null)
+    }
 }
 
 /** A token shaped like the server's JWT, carrying [sub]; the phone never checks its signature. */

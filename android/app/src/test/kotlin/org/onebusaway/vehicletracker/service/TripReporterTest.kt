@@ -1,7 +1,10 @@
 package org.onebusaway.vehicletracker.service
 
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -15,10 +18,13 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
 import org.onebusaway.vehicletracker.data.ActiveTrip
+import org.onebusaway.vehicletracker.data.FakeSessionStore
+import org.onebusaway.vehicletracker.data.Session
 import org.onebusaway.vehicletracker.data.TrackingProblem
 import org.onebusaway.vehicletracker.data.TrackingRepository
 import org.onebusaway.vehicletracker.data.api.ApiFactory
 import org.onebusaway.vehicletracker.data.api.TrackerApiProvider
+import org.onebusaway.vehicletracker.di.ApiHolder
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -70,14 +76,53 @@ class TripReporterTest {
         server2.shutdown()
     }
 
-    @Test fun `401 sets AUTH_EXPIRED`() = runTest {
+    /** A reporter whose client refreshes the token as the app's does, for [session] on [server]. */
+    private fun refreshingReporterWith(
+        server: MockWebServer,
+        session: (serverUrl: String) -> Session,
+    ): Pair<TripReporter, TrackingRepository> {
+        val tracking = TrackingRepository()
+        val sessions = FakeSessionStore().apply { state.value = session(server.url("/").toString()) }
+        val holder = ApiHolder(sessions, CoroutineScope(Job().apply { cancel() }), clock = { 1000L })
+        return TripReporter(TrackerApiProvider(holder::api), tracking, steppingClock()) to tracking
+    }
+
+    @Test fun `401 with no refresh token sets AUTH_EXPIRED`() = runTest {
         val server = MockWebServer().apply { start() }
         server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"invalid token"}"""))
-        val (reporter, tracking) = reporterWith(server)
+        val (reporter, tracking) = refreshingReporterWith(server) { url -> Session(url, "jwt", 0L) }
 
         reporter.report(trip, fix())
 
         assertEquals(TrackingProblem.AUTH_EXPIRED, tracking.state.value.problem)
+        assertEquals("nothing to refresh with", 1, server.requestCount)
+        server.shutdown()
+    }
+
+    @Test fun `401 is refreshed and the report goes through`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"invalid token"}"""))
+        server.enqueue(MockResponse().setBody("""{"access_token":"a2","refresh_token":"r2","expires_in":900}"""))
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"status":"ok"}"""))
+        val (reporter, tracking) = refreshingReporterWith(server) { url -> Session(url, "a1", 1000L, "r1", 1900L) }
+
+        reporter.report(trip, fix())
+
+        assertEquals(1, tracking.state.value.fixesSent)
+        assertEquals(TrackingProblem.NONE, tracking.state.value.problem)
+        server.shutdown()
+    }
+
+    // The session is still good, so the driver is told about the network, not asked to sign in.
+    @Test fun `a refresh that can't get through sets NO_NETWORK, not AUTH_EXPIRED`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":"invalid token"}"""))
+        server.enqueue(MockResponse().setResponseCode(500).setBody("""{"error":"internal server error"}"""))
+        val (reporter, tracking) = refreshingReporterWith(server) { url -> Session(url, "a1", 1000L, "r1", 1900L) }
+
+        reporter.report(trip, fix())
+
+        assertEquals(TrackingProblem.NO_NETWORK, tracking.state.value.problem)
         server.shutdown()
     }
 

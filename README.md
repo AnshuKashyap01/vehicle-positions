@@ -529,11 +529,10 @@ renewable access token plus a long-lived, revocable, hashed-at-rest refresh
 token.
 
 `ACCESS_TOKEN_TTL` still defaults to **24h**, unchanged from before, because
-the Android driver app cannot refresh yet — `TripReporter` treats a 401 as
-`AUTH_EXPIRED` and stops reporting until the driver signs in again, so a short
-default would cut every driver's reports off mid-shift. Once a client can
-refresh on 401, lowering it is a one-variable change; `15m` is the intended
-destination.
+the iOS driver app cannot refresh yet: when its token expires it stops reporting
+until the driver signs in again, so a short default would cut its reports off
+mid-shift. The Android app refreshes. Once the iOS app does too, lowering the
+default is a one-variable change; `15m` is the intended destination.
 
 Login returns both tokens:
 
@@ -548,7 +547,8 @@ Login returns both tokens:
 
 - `token` is **deprecated** and repeats `access_token` verbatim. It is kept so
   existing clients keep working; new clients should read `access_token`. It
-  will be removed once the Android app and the simulator have migrated.
+  will be removed once the iOS app and the simulator read `access_token`, as
+  the Android app already does.
 - `expires_in` is the access token's lifetime in seconds.
 - `refresh_token` is an opaque 32-byte random value, not a JWT. Only its
   SHA-256 hash is stored, so a database disclosure yields no usable tokens.
@@ -580,8 +580,8 @@ When a request gets a `401`, start one refresh, and have any request that fails
 while it is running wait for its result instead of starting another. A lost
 response is different: if the server processed the refresh and the reply never
 arrived, the retry presents a spent token and the user has to log in again. The
-Android app's refresh-on-`401` interceptor, when it is added, has to work this
-way.
+Android app refreshes this way, a minute before the access token expires and
+again after a `401`.
 
 Response codes:
 
@@ -603,9 +603,8 @@ Response codes:
 unchanged and `token` is still in the login response. Before lowering
 `ACCESS_TOKEN_TTL`, a client must handle `401 → refresh → retry`; the
 deprecated `token` field keeps it compiling and parsing, but does **not**
-protect it from a shorter lifetime. The Android app needs a paired change (an
-interceptor that refreshes on 401); `TripReporter.kt` already detects the
-expired-token state and surfaces it as `AUTH_EXPIRED`.
+protect it from a shorter lifetime. The Android app handles it. The iOS app
+still needs the same change.
 
 Both lifetimes are configurable:
 

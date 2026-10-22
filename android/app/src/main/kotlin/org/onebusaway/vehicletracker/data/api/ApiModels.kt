@@ -5,7 +5,18 @@ import kotlinx.serialization.Serializable
 
 @Serializable data class LoginRequest(val email: String, val password: String)
 
-@Serializable data class LoginResponse(val token: String)
+/**
+ * What the server hands out at sign-in and at every refresh. It also sends `token`, a deprecated
+ * copy of [accessToken] kept for clients that have not moved to `access_token` yet.
+ */
+@Serializable data class LoginResponse(
+    @SerialName("access_token") val accessToken: String,
+    @SerialName("refresh_token") val refreshToken: String,
+    /** Seconds from now until [accessToken] expires. */
+    @SerialName("expires_in") val expiresIn: Long,
+)
+
+@Serializable data class RefreshRequest(@SerialName("refresh_token") val refreshToken: String)
 
 @Serializable data class VehicleDto(val id: String, val label: String)
 

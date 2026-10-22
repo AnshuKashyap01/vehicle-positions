@@ -27,18 +27,30 @@ class RepositoriesTest {
     private fun apiFor(server: MockWebServer) =
         ApiFactory { "jwt" }.create(server.url("/").toString())
 
-    @Test fun `login success stores url, token, and issue time`() = runTest {
+    @Test fun `login success stores url, both tokens, issue time and expiry`() = runTest {
         val server = MockWebServer().apply { start() }
-        server.enqueue(MockResponse().setBody("""{"token":"jwt-1"}"""))
+        server.enqueue(MockResponse().setBody(
+            """{"token":"jwt-1","access_token":"jwt-1","refresh_token":"r1","expires_in":900}"""))
         val sessions = FakeSessionStore()
         val repo = AuthRepository(sessions, ApiFactory { null }, clock = { 1000L })
 
         val result = repo.login(server.url("/").toString(), "d@example.com", "pw")
 
         assertTrue(result.isSuccess)
-        val s = sessions.session.first()
-        assertEquals("jwt-1", s.token)
-        assertEquals(1000L, s.issuedAtEpochSec)
+        assertEquals(Session(server.url("/").toString(), "jwt-1", 1000L, "r1", 1900L), sessions.session.first())
+        server.shutdown()
+    }
+
+    @Test fun `login saves access_token, not the deprecated token`() = runTest {
+        val server = MockWebServer().apply { start() }
+        server.enqueue(MockResponse().setBody(
+            """{"token":"deprecated-copy","access_token":"jwt-1","refresh_token":"r1","expires_in":900}"""))
+        val sessions = FakeSessionStore()
+        val repo = AuthRepository(sessions, ApiFactory { null }, clock = { 1000L })
+
+        repo.login(server.url("/").toString(), "d@example.com", "pw")
+
+        assertEquals("jwt-1", sessions.session.first().token)
         server.shutdown()
     }
 
@@ -51,12 +63,6 @@ class RepositoriesTest {
 
         assertTrue(result.exceptionOrNull() is ApiError.Unauthorized)
         server.shutdown()
-    }
-
-    @Test fun `hasFreshToken is false after 24h`() {
-        val s = Session("u", "t", issuedAtEpochSec = 0L)
-        assertTrue(s.hasFreshToken(nowEpochSec = 24 * 3600 - 1))
-        assertTrue(!s.hasFreshToken(nowEpochSec = 24 * 3600))
     }
 
     @Test fun `trip start saves the catalog's service date, not the device's calendar date`() = runTest {
@@ -506,14 +512,14 @@ class RepositoriesTest {
         val sessions = FakeSessionStore()
         sessions.state.value = Session("http://example.com", "jwt", 1L)
         val neverRunsScope = CoroutineScope(Job().apply { cancel() })
-        val holder = ApiHolder(sessions, neverRunsScope)
+        val holder = ApiHolder(sessions, neverRunsScope, clock = { 0L })
 
         // Must not throw despite the async collector never having run.
         holder.api()
     }
 
     @Test fun `vehicle repository returns failure instead of throwing when session has no server url`() = runTest {
-        val holder = ApiHolder(FakeSessionStore(), CoroutineScope(Job().apply { cancel() }))
+        val holder = ApiHolder(FakeSessionStore(), CoroutineScope(Job().apply { cancel() }), clock = { 0L })
         val repo = VehicleRepository(TrackerApiProvider(holder::api))
 
         val result = repo.myVehicles()
@@ -523,7 +529,7 @@ class RepositoriesTest {
     }
 
     @Test fun `trip repository returns failure instead of throwing when session has no server url`() = runTest {
-        val holder = ApiHolder(FakeSessionStore(), CoroutineScope(Job().apply { cancel() }))
+        val holder = ApiHolder(FakeSessionStore(), CoroutineScope(Job().apply { cancel() }), clock = { 0L })
         val repo = TripRepository(TrackerApiProvider(holder::api), FakeTripStateStore(), FakeVehiclePrefsStore(), FakeSessionStore(), clock = { 0L })
 
         val result = repo.start("bus-1", "5", "trip-1", "20260804")

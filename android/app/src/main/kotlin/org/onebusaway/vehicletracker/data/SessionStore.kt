@@ -19,17 +19,60 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.onebusaway.vehicletracker.data.api.LoginResponse
 import java.io.IOException
 import java.security.GeneralSecurityException
 import java.util.Base64
 
-data class Session(val serverUrl: String?, val token: String?, val issuedAtEpochSec: Long?) {
-    fun hasFreshToken(nowEpochSec: Long): Boolean =
-        token != null && issuedAtEpochSec != null && nowEpochSec - issuedAtEpochSec < 24 * 3600
+/**
+ * The driver's session. [refreshToken] and [accessExpiresAtEpochSec] are null for a session saved
+ * by a build that did not keep them.
+ */
+data class Session(
+    val serverUrl: String?,
+    val token: String?,
+    val issuedAtEpochSec: Long?,
+    val refreshToken: String? = null,
+    val accessExpiresAtEpochSec: Long? = null,
+) {
+    /**
+     * Whether requests can go out without the driver signing in again: there is an access token,
+     * and either a refresh token to renew it with or time left on it. A refresh token the server
+     * will refuse still counts until a request finds that out and drops it.
+     */
+    fun isSignedIn(nowEpochSec: Long): Boolean {
+        if (token == null) return false
+        if (refreshToken != null) return true
+        val expiresAt = accessExpiresAtEpochSec
+            ?: issuedAtEpochSec?.plus(OLD_BUILD_TOKEN_LIFETIME_SEC)
+            ?: return false
+        return nowEpochSec < expiresAt
+    }
+
+    /**
+     * When to refresh the access token before it expires, so requests don't meet a 401: a minute
+     * early, or halfway through a lifetime shorter than two minutes. Null when there is no refresh
+     * token, or no expiry to count from.
+     */
+    val refreshDueAtEpochSec: Long?
+        get() {
+            if (refreshToken == null) return null
+            val expiresAt = accessExpiresAtEpochSec ?: return null
+            val issuedAt = issuedAtEpochSec ?: return null
+            return expiresAt - minOf(MAX_EARLY_REFRESH_SEC, (expiresAt - issuedAt) / 2)
+        }
 
     /** The signed-in driver's user id on the server, or null when there is no readable token. */
     val driverId: String? get() = token?.let(::jwtSubject)
 }
+
+/**
+ * How long the builds before refresh took a token to last. A session they saved has no expiry and
+ * no refresh token, so it is held to the same 24 hours from sign-in.
+ */
+private const val OLD_BUILD_TOKEN_LIFETIME_SEC = 24 * 3600L
+
+private const val MAX_EARLY_REFRESH_SEC = 60L
 
 /**
  * The `sub` claim of the server's JWT, which is the user id `/trips/end` checks a trip against.
@@ -46,9 +89,34 @@ internal fun jwtSubject(token: String): String? = try {
     null
 }
 
+/** What a sign-in or a refresh hands out, with its times on the phone's clock. */
+data class IssuedTokens(
+    val accessToken: String,
+    val refreshToken: String,
+    val accessExpiresAtEpochSec: Long,
+    val issuedAtEpochSec: Long,
+)
+
+/**
+ * The tokens in this reply, timed from [nowEpochSec], the moment it arrived. `expires_in` is
+ * relative, so a phone clock that disagrees with the server's does not move the expiry.
+ */
+fun LoginResponse.issuedAt(nowEpochSec: Long) = IssuedTokens(
+    accessToken = accessToken,
+    refreshToken = refreshToken,
+    accessExpiresAtEpochSec = nowEpochSec + expiresIn,
+    issuedAtEpochSec = nowEpochSec,
+)
+
 interface SessionStore {
     val session: Flow<Session>
-    suspend fun saveLogin(serverUrl: String, token: String, issuedAtEpochSec: Long)
+    suspend fun saveLogin(serverUrl: String, tokens: IssuedTokens)
+
+    /** Saves the pair a refresh handed out, keeping the server URL. */
+    suspend fun saveRefreshed(tokens: IssuedTokens)
+
+    /** Forgets the refresh token and keeps the access token, which works until it expires. */
+    suspend fun dropRefreshToken()
     suspend fun clearToken()
 }
 
@@ -58,13 +126,13 @@ internal val Context.sessionDataStore: DataStore<Preferences> by preferencesData
 private const val LOG_TAG = "SessionStore"
 
 /**
- * Persists the driver's session, with the JWT encrypted by [cryptor] before it reaches disk.
+ * Persists the driver's session, with both tokens encrypted by [cryptor] before they reach disk.
  *
  * Takes a `DataStore<Preferences>` rather than a `Context` — the same trade
  * [DataStoreTripStateStore] makes — so the upgrade path from the previous build can be
  * unit-tested without an emulator.
  *
- * Only the token is encrypted. The server URL and the issued-at timestamp are not credentials,
+ * Only the tokens are encrypted. The server URL and the two timestamps are not credentials,
  * and leaving them in the clear keeps the upgrade to a single key.
  */
 class EncryptedSessionStore(
@@ -75,6 +143,8 @@ class EncryptedSessionStore(
         val SERVER_URL = stringPreferencesKey("server_url")
         val TOKEN = stringPreferencesKey("token_enc")
         val TOKEN_ISSUED_AT = longPreferencesKey("token_issued_at")
+        val TOKEN_EXPIRES_AT = longPreferencesKey("token_expires_at")
+        val REFRESH_TOKEN = stringPreferencesKey("refresh_token_enc")
 
         /**
          * The plaintext token written by builds before this one, read once so an upgrade does not
@@ -100,6 +170,8 @@ class EncryptedSessionStore(
                         serverUrl = prefs[Keys.SERVER_URL],
                         token = readToken(prefs),
                         issuedAtEpochSec = prefs[Keys.TOKEN_ISSUED_AT],
+                        refreshToken = readRefreshToken(prefs),
+                        accessExpiresAtEpochSec = prefs[Keys.TOKEN_EXPIRES_AT],
                     )
                 },
         )
@@ -152,22 +224,51 @@ class EncryptedSessionStore(
         }
     }
 
-    override suspend fun saveLogin(serverUrl: String, token: String, issuedAtEpochSec: Long) {
-        // Encrypt before opening the transaction so a Keystore failure reaches the caller —
-        // AuthRepository.login turns it into Result.failure — without half-writing a session.
-        val encrypted = cryptor.encrypt(token)
+    /**
+     * Read like [readToken]: a refresh token that cannot be decrypted is reported as none. The
+     * access token is read on its own, so the driver stays signed in until it expires.
+     */
+    private fun readRefreshToken(prefs: Preferences): String? {
+        val stored = prefs[Keys.REFRESH_TOKEN] ?: return null
+        return try {
+            cryptor.decrypt(stored)
+        } catch (e: GeneralSecurityException) {
+            Log.w(LOG_TAG, "Stored refresh token could not be decrypted; treating it as absent.", e)
+            null
+        }
+    }
+
+    override suspend fun saveLogin(serverUrl: String, tokens: IssuedTokens) = save(serverUrl, tokens)
+
+    override suspend fun saveRefreshed(tokens: IssuedTokens) = save(serverUrl = null, tokens)
+
+    /** Saves [tokens], and [serverUrl] unless it is null. */
+    private suspend fun save(serverUrl: String?, tokens: IssuedTokens) {
+        // Encrypt before opening the transaction, so a Keystore failure reaches the caller without
+        // half-writing a session: AuthRepository.login turns it into Result.failure, and
+        // TokenRefresher drops the refresh token the server has just spent.
+        val access = cryptor.encrypt(tokens.accessToken)
+        val refresh = cryptor.encrypt(tokens.refreshToken)
         dataStore.edit { prefs ->
-            prefs[Keys.SERVER_URL] = serverUrl
-            prefs[Keys.TOKEN] = encrypted
-            prefs[Keys.TOKEN_ISSUED_AT] = issuedAtEpochSec
+            if (serverUrl != null) prefs[Keys.SERVER_URL] = serverUrl
+            prefs[Keys.TOKEN] = access
+            prefs[Keys.REFRESH_TOKEN] = refresh
+            prefs[Keys.TOKEN_ISSUED_AT] = tokens.issuedAtEpochSec
+            prefs[Keys.TOKEN_EXPIRES_AT] = tokens.accessExpiresAtEpochSec
             prefs.remove(Keys.LEGACY_TOKEN)
         }
+    }
+
+    override suspend fun dropRefreshToken() {
+        dataStore.edit { prefs -> prefs.remove(Keys.REFRESH_TOKEN) }
     }
 
     override suspend fun clearToken() {
         dataStore.edit { prefs ->
             prefs.remove(Keys.TOKEN)
             prefs.remove(Keys.TOKEN_ISSUED_AT)
+            prefs.remove(Keys.REFRESH_TOKEN)
+            prefs.remove(Keys.TOKEN_EXPIRES_AT)
             prefs.remove(Keys.LEGACY_TOKEN)
         }
     }

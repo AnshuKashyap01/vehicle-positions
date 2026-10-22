@@ -146,7 +146,7 @@ class AppNavViewModel @Inject constructor(
             _startDestination.value = when {
                 activeTrip != null && serviceIsRunning() -> ROUTE_TRACKING
                 activeTrip != null -> ROUTE_RESUME
-                session.hasFreshToken(clock()) -> ROUTE_VEHICLES
+                session.isSignedIn(clock()) -> ROUTE_VEHICLES
                 else -> ROUTE_LOGIN
             }
         }

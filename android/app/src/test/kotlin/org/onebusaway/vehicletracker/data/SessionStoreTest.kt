@@ -63,33 +63,53 @@ class SessionStoreTest {
     @Test fun `a saved login reads back unchanged`() = runTest {
         val store = EncryptedSessionStore(newDataStore(), FakeCryptor())
 
-        store.saveLogin(SERVER, TOKEN, ISSUED_AT)
+        store.saveLogin(SERVER, TOKENS)
 
-        assertEquals(Session(SERVER, TOKEN, ISSUED_AT), store.session.first())
+        assertEquals(Session(SERVER, TOKEN, ISSUED_AT, REFRESH_TOKEN, EXPIRES_AT), store.session.first())
     }
 
-    @Test fun `the token never reaches the file in the clear`() = runTest {
+    @Test fun `neither token reaches the file in the clear`() = runTest {
         val file = File(tempFolder.newFolder(), "session.preferences_pb")
         val dataStore = newDataStore(file)
 
-        EncryptedSessionStore(dataStore, FakeCryptor()).saveLogin(SERVER, TOKEN, ISSUED_AT)
+        EncryptedSessionStore(dataStore, FakeCryptor()).saveLogin(SERVER, TOKENS)
 
         val prefs = dataStore.data.first()
         assertNull("the plaintext key must not survive a save", prefs[LEGACY_TOKEN_KEY])
         assertNotEquals(TOKEN, prefs[TOKEN_KEY])
-        assertFalse(
-            "the token appears verbatim in $file",
-            file.readText(Charsets.ISO_8859_1).contains(TOKEN),
-        )
+        assertEquals(FakeCryptor().encrypt(REFRESH_TOKEN), prefs[REFRESH_TOKEN_KEY])
+        val onDisk = file.readText(Charsets.ISO_8859_1)
+        assertFalse("the token appears verbatim in $file", onDisk.contains(TOKEN))
+        assertFalse("the refresh token appears verbatim in $file", onDisk.contains(REFRESH_TOKEN))
     }
 
-    @Test fun `clearing the token keeps the server url`() = runTest {
+    @Test fun `a refreshed pair replaces the old one and keeps the server url`() = runTest {
         val store = EncryptedSessionStore(newDataStore(), FakeCryptor())
-        store.saveLogin(SERVER, TOKEN, ISSUED_AT)
+        store.saveLogin(SERVER, TOKENS)
+
+        store.saveRefreshed(IssuedTokens("a2", "r2", ISSUED_AT + 1000, ISSUED_AT + 100))
+
+        assertEquals(Session(SERVER, "a2", ISSUED_AT + 100, "r2", ISSUED_AT + 1000), store.session.first())
+    }
+
+    @Test fun `dropping the refresh token keeps the access token and its expiry`() = runTest {
+        val store = EncryptedSessionStore(newDataStore(), FakeCryptor())
+        store.saveLogin(SERVER, TOKENS)
+
+        store.dropRefreshToken()
+
+        assertEquals(Session(SERVER, TOKEN, ISSUED_AT, refreshToken = null, accessExpiresAtEpochSec = EXPIRES_AT), store.session.first())
+    }
+
+    @Test fun `clearing the token removes both tokens and their times, and keeps the server url`() = runTest {
+        val dataStore = newDataStore()
+        val store = EncryptedSessionStore(dataStore, FakeCryptor())
+        store.saveLogin(SERVER, TOKENS)
 
         store.clearToken()
 
         assertEquals(Session(SERVER, null, null), store.session.first())
+        assertEquals(setOf("server_url"), dataStore.data.first().asMap().keys.map { it.name }.toSet())
     }
 
     @Test fun `the session flow re-emits after each write`() = runTest {
@@ -97,8 +117,8 @@ class SessionStoreTest {
 
         store.session.test {
             assertEquals(Session(null, null, null), awaitItem())
-            store.saveLogin(SERVER, TOKEN, ISSUED_AT)
-            assertEquals(Session(SERVER, TOKEN, ISSUED_AT), awaitItem())
+            store.saveLogin(SERVER, TOKENS)
+            assertEquals(Session(SERVER, TOKEN, ISSUED_AT, REFRESH_TOKEN, EXPIRES_AT), awaitItem())
             store.clearToken()
             assertEquals(Session(SERVER, null, null), awaitItem())
             cancelAndIgnoreRemainingEvents()
@@ -158,24 +178,49 @@ class SessionStoreTest {
     @Test fun `an undecryptable token reads as logged out`() = runTest {
         val dataStore = newDataStore()
         val cryptor = FakeCryptor()
-        EncryptedSessionStore(dataStore, cryptor).saveLogin(SERVER, TOKEN, ISSUED_AT)
+        EncryptedSessionStore(dataStore, cryptor).saveLogin(SERVER, TOKENS)
 
         cryptor.failDecrypt = true
         val session = EncryptedSessionStore(dataStore, cryptor).session.first()
 
         // A null token is what sends the driver back to login.
         assertNull(session.token)
-        assertFalse(session.hasFreshToken(ISSUED_AT))
+        assertFalse(session.isSignedIn(ISSUED_AT))
         // Nothing is erased on a failure that may be transient.
         assertEquals(SERVER, session.serverUrl)
         assertTrue(dataStore.data.first().contains(TOKEN_KEY))
+    }
+
+    @Test fun `an undecryptable refresh token reads as none and leaves the access token readable`() = runTest {
+        val dataStore = newDataStore()
+        EncryptedSessionStore(dataStore, FakeCryptor()).saveLogin(SERVER, TOKENS)
+        dataStore.edit { prefs -> prefs[REFRESH_TOKEN_KEY] = "written under a key that is gone" }
+
+        val session = EncryptedSessionStore(dataStore, FakeCryptor()).session.first()
+
+        assertNull(session.refreshToken)
+        assertEquals(TOKEN, session.token)
+        assertEquals(EXPIRES_AT, session.accessExpiresAtEpochSec)
+    }
+
+    @Test fun `a session saved by the build before refresh reads back with no refresh token and no expiry`() = runTest {
+        val dataStore = newDataStore()
+        dataStore.edit { prefs ->
+            prefs[stringPreferencesKey("server_url")] = SERVER
+            prefs[TOKEN_KEY] = FakeCryptor().encrypt(TOKEN)
+            prefs[longPreferencesKey("token_issued_at")] = ISSUED_AT
+        }
+
+        val session = EncryptedSessionStore(dataStore, FakeCryptor()).session.first()
+
+        assertEquals(Session(SERVER, TOKEN, ISSUED_AT, refreshToken = null, accessExpiresAtEpochSec = null), session)
     }
 
     @Test fun `saveLogin writes nothing when encryption fails`() = runTest {
         val dataStore = newDataStore()
         val store = EncryptedSessionStore(dataStore, FakeCryptor().apply { failEncrypt = true })
 
-        val failure = runCatching { store.saveLogin(SERVER, TOKEN, ISSUED_AT) }.exceptionOrNull()
+        val failure = runCatching { store.saveLogin(SERVER, TOKENS) }.exceptionOrNull()
 
         assertTrue("expected a GeneralSecurityException, got $failure", failure is GeneralSecurityException)
         assertTrue("a half-written session is worse than none", dataStore.data.first().asMap().isEmpty())
@@ -231,11 +276,42 @@ class SessionStoreTest {
         assertTrue("expected an IllegalStateException, got $failure", failure is IllegalStateException)
     }
 
-    @Test fun `hasFreshToken holds one second before 24h and lapses at 24h`() {
+    @Test fun `a refresh token keeps the driver signed in after the access token expires`() {
+        val session = Session(SERVER, TOKEN, ISSUED_AT, REFRESH_TOKEN, EXPIRES_AT)
+
+        assertTrue(session.isSignedIn(EXPIRES_AT + 3600))
+    }
+
+    @Test fun `with no refresh token, the driver is signed in until the access token expires`() {
+        val session = Session(SERVER, TOKEN, ISSUED_AT, refreshToken = null, accessExpiresAtEpochSec = EXPIRES_AT)
+
+        assertTrue(session.isSignedIn(EXPIRES_AT - 1))
+        assertFalse(session.isSignedIn(EXPIRES_AT))
+    }
+
+    @Test fun `a session from the build before refresh lasts 24h from sign-in`() {
         val session = Session(SERVER, TOKEN, ISSUED_AT)
 
-        assertTrue(session.hasFreshToken(ISSUED_AT + 24 * 3600 - 1))
-        assertFalse(session.hasFreshToken(ISSUED_AT + 24 * 3600))
+        assertTrue(session.isSignedIn(ISSUED_AT + 24 * 3600 - 1))
+        assertFalse(session.isSignedIn(ISSUED_AT + 24 * 3600))
+    }
+
+    @Test fun `no access token is never signed in, even with a refresh token`() {
+        assertFalse(Session(SERVER, null, ISSUED_AT, REFRESH_TOKEN, EXPIRES_AT).isSignedIn(ISSUED_AT))
+    }
+
+    @Test fun `a token is refreshed a minute before it expires, or halfway through a shorter life`() {
+        fun dueAfterIssue(lifetimeSec: Long) =
+            Session(SERVER, TOKEN, ISSUED_AT, REFRESH_TOKEN, ISSUED_AT + lifetimeSec).refreshDueAtEpochSec!! - ISSUED_AT
+
+        assertEquals(24 * 3600L - 60, dueAfterIssue(24 * 3600L))
+        assertEquals(60L, dueAfterIssue(120L))
+        assertEquals(30L, dueAfterIssue(60L))
+    }
+
+    @Test fun `a token with nothing to refresh it with, or no known expiry, is never due a refresh`() {
+        assertNull(Session(SERVER, TOKEN, ISSUED_AT, refreshToken = null, accessExpiresAtEpochSec = EXPIRES_AT).refreshDueAtEpochSec)
+        assertNull(Session(SERVER, TOKEN, ISSUED_AT).refreshDueAtEpochSec)
     }
 
     /** Stands in for storage that cannot be read at all, so the failure paths are reachable. */
@@ -249,8 +325,12 @@ class SessionStoreTest {
         const val SERVER = "https://transit.example.org/"
         const val TOKEN = "eyJhbGciOiJIUzI1NiJ9.driver42.signature"
         const val ISSUED_AT = 1_785_886_200L
+        const val REFRESH_TOKEN = "3f9a17c0d2e84b65a1f0c9e7b3d24a68"
+        const val EXPIRES_AT = ISSUED_AT + 24 * 3600
+        val TOKENS = IssuedTokens(TOKEN, REFRESH_TOKEN, EXPIRES_AT, ISSUED_AT)
 
         val TOKEN_KEY = stringPreferencesKey("token_enc")
+        val REFRESH_TOKEN_KEY = stringPreferencesKey("refresh_token_enc")
         val LEGACY_TOKEN_KEY = stringPreferencesKey("token")
     }
 

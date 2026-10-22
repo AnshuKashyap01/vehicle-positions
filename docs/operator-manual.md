@@ -352,10 +352,12 @@ through, a dark line with an amber icon joins the bottom of the card:
 | **No GPS signal** · Position paused | The phone is not producing location fixes. | Check that location services are still on and the phone has a view of the sky. |
 | **Phone clock is wrong** · Set automatic time | The server has rejected several reports because the phone's clock is wrong. | Turn on automatic date and time in Android settings. |
 
-When the phone's sign-in expires, a **Signed out** card takes the status card's
-place: "Reports have stopped. Your trip is still open." Sign-ins last 24 hours,
-so this normally appears on a phone that has been running since the previous
-day. Tap **Sign in** on the card and sign in again with the same email and
+The phone renews its sign-in by itself while the app is in use. When it can't,
+a **Signed out** card takes the status card's place: "Reports have stopped. Your
+trip is still open." That happens when the account has been deactivated or
+deleted, or its password changed, when the phone has gone a week without using
+the app, or when the driver signed in on another phone and then signed out
+there. Tap **Sign in** on the card and sign in again with the same email and
 password; the trip carries on.
 
 **Ending a trip.** Tap **End trip** on the trip bar and confirm **End this
@@ -554,7 +556,7 @@ points are.
 | Driver sees **No buses are assigned to you** | No active vehicle is assigned to that account. | Check the vehicle is not deactivated (**Vehicles** → **Show deactivated**), then assign it (section 6) and have the driver tap **Check again**. |
 | One vehicle missing from the feed and the map, others fine | That phone has stopped reporting for longer than the staleness threshold: no signal, app closed, trip never started, phone battery dead, or Android killed the app in the background. | Ask the driver what the line under the status card says. **No connection** is a coverage problem and clears itself. If the app is not on the tracking screen at all, the trip was never started or was ended. If it keeps dying when the screen locks, the background-location permission is not **"Allow all the time"**: redo step 6 of section 7. |
 | Feed completely empty during service hours | Nothing is reporting, or the server lost its database. | Check **Dashboard**: if **Feed last updated** says **never** (nothing has reported for several minutes) and **Active Trips** is 0, it is the phones — start with two or three drivers. If **Active Trips** is healthy but nothing is in the feed, contact IT: see the monitoring checks in [`deployment.md` §9](deployment.md#9-monitoring). |
-| Driver phone shows **Signed out** | The 24-hour sign-in expired. | Have the driver tap **Sign in** on that card and sign in again. If you have since deactivated the account, sign-in is refused, which is the intended outcome. |
+| Driver phone shows **Signed out** | The sign-in could not be renewed: the account was deactivated or deleted, or its password changed, the phone went a week without using the app, or the driver signed out on another phone. | Have the driver tap **Sign in** on that card and sign in again. If you have since deactivated the account, sign-in is refused, which is the intended outcome. |
 | A driver or admin cannot sign in and insists the password is right | The account is deactivated. Deactivation is deliberately indistinguishable from a wrong password on the sign-in screen. | **Users** → find the row → if **Status** reads **Deactivated**, click **Activate** and confirm **Reactivate this user?** |
 | Someone you deactivated is still reporting, or their phone still works | Deactivation blocks new sign-ins; it does not end a session already in progress, and that session can last up to 24 hours. | Confirm the row shows **Deactivated** on **Users** — that is enough to stop them signing in again. If they must be cut off this minute, tell your IT contact; only a server-side change ends live sessions. |
 | Driver phone shows **Phone clock is wrong** | The phone's clock is wrong, so the server is rejecting its reports. | On the phone, turn on automatic date and time in Android settings, then restart the app. The line under the status card goes away once reports are accepted again. |

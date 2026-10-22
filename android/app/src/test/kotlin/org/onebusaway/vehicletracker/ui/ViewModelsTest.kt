@@ -96,7 +96,7 @@ class ViewModelsTest {
 
     @Test fun `login success invokes callback`() = runTest(dispatcher) {
         val server = MockWebServer().apply { start() }
-        server.enqueue(MockResponse().setBody("""{"token":"jwt"}"""))
+        server.enqueue(MockResponse().setBody("""{"access_token":"jwt","refresh_token":"r1","expires_in":900}"""))
         val sessionStore = FakeSessionStore()
         val vm = LoginViewModel(AuthRepository(sessionStore, ApiFactory { null }, clock = { 0L }), sessionStore)
         vm.onServerUrlChange(server.url("/").toString())
@@ -153,6 +153,20 @@ class ViewModelsTest {
         dispatcher.scheduler.advanceUntilIdle()
 
         assertEquals("login", vm.startDestination.value)
+    }
+
+    // Signed in a day and an hour ago: the 24 hours the old check allowed are over too.
+    @Test fun noTrip_andExpiredToken_withRefreshToken_goesToVehicles() = runTest(dispatcher) {
+        val vm = appNavViewModel(
+            session = freshSession.copy(
+                issuedAtEpochSec = launchNow - 25 * 3600,
+                refreshToken = "r1",
+                accessExpiresAtEpochSec = launchNow - 3600,
+            ),
+        )
+        dispatcher.scheduler.advanceUntilIdle()
+
+        assertEquals("vehicles", vm.startDestination.value)
     }
 
     @Test fun storedTrip_withServiceActive_goesStraightToTracking() = runTest(dispatcher) {
