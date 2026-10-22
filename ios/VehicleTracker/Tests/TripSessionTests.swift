@@ -43,9 +43,18 @@ import VehiclePositionsKit
         #expect(session().phase == .signedOut)
     }
 
-    @Test func staleTokenMeansSignedOut() throws {
-        try tokens.save(StoredToken(token: "old", issuedAt: clock.now.addingTimeInterval(-25 * 3600)))
+    @Test func anExpiredTokenWithNothingToRenewItMeansSignedOut() throws {
+        try tokens.save(StoredToken(token: "old", issuedAt: clock.now.addingTimeInterval(-3600),
+                                    expiresAt: clock.now.addingTimeInterval(-2700)))
+        defaults.set("https://positions.example.org", forKey: "serverURL")
         #expect(session().phase == .signedOut)
+    }
+
+    @Test func anExpiredTokenWithARefreshTokenSkipsLogin() throws {
+        try tokens.save(StoredToken(token: "old", issuedAt: clock.now.addingTimeInterval(-3600),
+                                    refreshToken: "refresh-1", expiresAt: clock.now.addingTimeInterval(-2700)))
+        defaults.set("https://positions.example.org", forKey: "serverURL")
+        #expect(session().phase == .idle)
     }
 
     @Test func freshTokenSkipsLogin() throws {
@@ -59,7 +68,8 @@ import VehiclePositionsKit
         try await s.signIn(serverURL: server, email: "d@test.com", password: "pw")
         #expect(s.phase == .idle)
         #expect(api.logins.count == 1)
-        #expect(try tokens.load()?.token == "jwt")
+        #expect(try tokens.load() == StoredToken(token: "jwt", issuedAt: clock.now, refreshToken: "refresh-1",
+                                                 expiresAt: clock.now.addingTimeInterval(900)))
         #expect(s.settings.serverURLString == "https://positions.example.org")
         #expect(s.settings.email == "d@test.com")
     }
