@@ -86,6 +86,17 @@ import Testing
         #expect(body["timestamp"] as? Int == 1_756_800_000)
     }
 
+    @Test func locationReportCarriesRouteAndStartDate() async throws {
+        StubURLProtocol.reset { _ in (201, Data(#"{"status":"ok"}"#.utf8)) }
+        let report = LocationReport(vehicleID: "bus-1", tripID: "T1", latitude: 47.6, longitude: -122.33,
+                                    bearing: nil, speed: 8, accuracy: 5, timestamp: 1_756_800_000,
+                                    routeID: "R1", startDate: "20260902")
+        try await client().postLocation(report)
+        let body = try JSONSerialization.jsonObject(with: StubURLProtocol.last!.body!) as! [String: Any]
+        #expect(body["route_id"] as? String == "R1")
+        #expect(body["start_date"] as? String == "20260902")
+    }
+
     @Test func serverErrorsCarryStatusAndMessage() async throws {
         StubURLProtocol.reset { _ in (401, Data(#"{"error":"invalid token"}"#.utf8)) }
         await #expect(throws: APIError.status(401, message: "invalid token")) {
