@@ -82,7 +82,7 @@ func TestNewRiderRuntime_EndsStaleRidesAndSharesTheIndex(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	gt, err := newGTFSRuntime(ctx, "rider/testdata/fixture.zip", time.Hour)
+	gt, err := newGTFSRuntime(ctx, "rider/testdata/fixture.zip", time.Hour, nil)
 	require.NoError(t, err)
 	defer gt.Stop()
 

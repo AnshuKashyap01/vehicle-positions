@@ -489,6 +489,39 @@ func (q *Queries) GetActiveTripByUser(ctx context.Context, userID int64) (Trip, 
 	return i, err
 }
 
+const getGTFSFeedCache = `-- name: GetGTFSFeedCache :one
+SELECT source, body, fetched_at FROM gtfs_feed_cache WHERE id = 1
+`
+
+type GetGTFSFeedCacheRow struct {
+	Source    string
+	Body      []byte
+	FetchedAt pgtype.Timestamptz
+}
+
+func (q *Queries) GetGTFSFeedCache(ctx context.Context) (GetGTFSFeedCacheRow, error) {
+	row := q.db.QueryRow(ctx, getGTFSFeedCache)
+	var i GetGTFSFeedCacheRow
+	err := row.Scan(&i.Source, &i.Body, &i.FetchedAt)
+	return i, err
+}
+
+const getGTFSFeedCacheDigest = `-- name: GetGTFSFeedCacheDigest :one
+SELECT source, sha256 FROM gtfs_feed_cache WHERE id = 1
+`
+
+type GetGTFSFeedCacheDigestRow struct {
+	Source string
+	Sha256 []byte
+}
+
+func (q *Queries) GetGTFSFeedCacheDigest(ctx context.Context) (GetGTFSFeedCacheDigestRow, error) {
+	row := q.db.QueryRow(ctx, getGTFSFeedCacheDigest)
+	var i GetGTFSFeedCacheDigestRow
+	err := row.Scan(&i.Source, &i.Sha256)
+	return i, err
+}
+
 const getLocationHistory = `-- name: GetLocationHistory :many
 SELECT latitude, longitude, bearing, speed, accuracy, timestamp, trip_id, received_at
 FROM location_points
@@ -1595,6 +1628,24 @@ func (q *Queries) UpsertAdminVehicle(ctx context.Context, arg UpsertAdminVehicle
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const upsertGTFSFeedCache = `-- name: UpsertGTFSFeedCache :exec
+INSERT INTO gtfs_feed_cache (id, source, body, sha256, fetched_at)
+VALUES (1, $1, $2, $3, NOW())
+ON CONFLICT (id) DO UPDATE
+SET source = EXCLUDED.source, body = EXCLUDED.body, sha256 = EXCLUDED.sha256, fetched_at = NOW()
+`
+
+type UpsertGTFSFeedCacheParams struct {
+	Source string
+	Body   []byte
+	Sha256 []byte
+}
+
+func (q *Queries) UpsertGTFSFeedCache(ctx context.Context, arg UpsertGTFSFeedCacheParams) error {
+	_, err := q.db.Exec(ctx, upsertGTFSFeedCache, arg.Source, arg.Body, arg.Sha256)
+	return err
 }
 
 const upsertRider = `-- name: UpsertRider :one

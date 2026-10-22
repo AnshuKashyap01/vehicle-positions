@@ -25,10 +25,33 @@ const (
 // or a local file path. A nil client means http.DefaultClient, which is what a
 // local path needs no client at all for.
 func LoadStatic(ctx context.Context, source string, client *http.Client) (*gtfs.Static, error) {
-	body, err := fetchFeed(ctx, source, client)
+	body, err := FetchFeed(ctx, source, client)
 	if err != nil {
 		return nil, err
 	}
+	return parseStatic(body, source)
+}
+
+// LoadIndex loads a GTFS static feed and indexes it.
+func LoadIndex(ctx context.Context, source string, client *http.Client, now time.Time) (*Index, error) {
+	body, err := FetchFeed(ctx, source, client)
+	if err != nil {
+		return nil, err
+	}
+	return IndexFromBytes(body, source, now)
+}
+
+// IndexFromBytes parses and indexes the raw zip of a GTFS static feed, so a
+// caller that keeps a copy of the zip can index it without fetching again.
+func IndexFromBytes(body []byte, source string, now time.Time) (*Index, error) {
+	static, err := parseStatic(body, source)
+	if err != nil {
+		return nil, err
+	}
+	return BuildIndex(static, source, now)
+}
+
+func parseStatic(body []byte, source string) (*gtfs.Static, error) {
 	static, err := gtfs.ParseStatic(body, gtfs.ParseStaticOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("rider: parse GTFS from %q: %w", source, err)
@@ -36,17 +59,9 @@ func LoadStatic(ctx context.Context, source string, client *http.Client) (*gtfs.
 	return static, nil
 }
 
-// LoadIndex loads a GTFS static feed and indexes it.
-func LoadIndex(ctx context.Context, source string, client *http.Client, now time.Time) (*Index, error) {
-	static, err := LoadStatic(ctx, source, client)
-	if err != nil {
-		return nil, err
-	}
-	return BuildIndex(static, source, now)
-}
-
-// fetchFeed returns the raw bytes of the feed at source.
-func fetchFeed(ctx context.Context, source string, client *http.Client) ([]byte, error) {
+// FetchFeed returns the raw bytes of the feed at source, an http(s) URL or a
+// local file path. A nil client means http.DefaultClient.
+func FetchFeed(ctx context.Context, source string, client *http.Client) ([]byte, error) {
 	if !strings.HasPrefix(source, "http://") && !strings.HasPrefix(source, "https://") {
 		body, err := os.ReadFile(source)
 		if err != nil {

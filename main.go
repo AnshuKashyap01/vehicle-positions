@@ -330,7 +330,7 @@ func main() {
 	riderCfg := riderConfigFromEnv()
 	// The driver catalog serves the schedule, and rider mode verifies against
 	// it when enabled. An empty source was already refused above.
-	schedule, err := newGTFSRuntime(ctx, gtfsSource, riderCfg.GTFSRefresh)
+	schedule, err := newGTFSRuntime(ctx, gtfsSource, riderCfg.GTFSRefresh, store)
 	if err != nil {
 		slog.Error("failed to load GTFS", "source", gtfsSource, "error", err)
 		os.Exit(1)
