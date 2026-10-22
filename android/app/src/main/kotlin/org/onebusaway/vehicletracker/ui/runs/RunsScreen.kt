@@ -57,6 +57,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.onebusaway.vehicletracker.R
 import org.onebusaway.vehicletracker.ui.components.AttentionBanner
@@ -85,6 +86,10 @@ fun RunsScreen(
     viewModel: RunsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    LifecycleStartEffect(viewModel) {
+        viewModel.onScreenVisible(true)
+        onStopOrDispose { viewModel.onScreenVisible(false) }
+    }
 
     // The permission sequence has no argument to carry the tapped run through, so the run waits
     // here until it comes back ready. Try again on a refused start reuses it.
