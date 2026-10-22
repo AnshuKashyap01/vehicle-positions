@@ -9,7 +9,12 @@ import (
 )
 
 const (
-	rateInterval    = 5 * time.Second
+	rateInterval = 5 * time.Second
+	// rateBurst lets one report through early. A client that reports every
+	// rateInterval by its own clock still has reports arrive less than
+	// rateInterval apart whenever network delay shrinks one gap, and with no
+	// burst each of those was a 429. The sustained rate is unchanged.
+	rateBurst       = 2
 	maxTrackedRates = 10_000
 )
 
@@ -34,13 +39,13 @@ type rateLimiterEntry struct {
 }
 
 func NewVehicleRateLimiter() *VehicleRateLimiter {
-	return NewKeyedRateLimiter(rateInterval, 1, false)
+	return NewKeyedRateLimiter(rateInterval, rateBurst, false)
 }
 
 // NewKeyedRateLimiter builds a per-key token-bucket limiter allowing one event
 // every interval with the given burst, failing closed or open at capacity (see
 // VehicleRateLimiter.failClosed). It is the general form of
-// NewVehicleRateLimiter, which is NewKeyedRateLimiter(rateInterval, 1, false).
+// NewVehicleRateLimiter, which is NewKeyedRateLimiter(rateInterval, rateBurst, false).
 func NewKeyedRateLimiter(interval time.Duration, burst int, failClosed bool) *VehicleRateLimiter {
 	vrl := &VehicleRateLimiter{
 		limiters:   make(map[string]*rateLimiterEntry),
