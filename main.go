@@ -159,13 +159,13 @@ func newMux(store appStore, tracker *Tracker, rateLimiter *VehicleRateLimiter, j
 // CSRF protection wrapping the whole thing. It is the single place routes
 // and cross-cutting middleware come together.
 func newHandler(store appStore, tracker *Tracker, rateLimiter *VehicleRateLimiter,
-	loginLimiter *LoginRateLimiter, refreshLimiter *RefreshRateLimiter, jwtSecret []byte, ttls tokenTTLs, startTime time.Time,
+	loginLimiter, adminLoginLimiter *LoginRateLimiter, refreshLimiter *RefreshRateLimiter, jwtSecret []byte, ttls tokenTTLs, startTime time.Time,
 	cfg adminUIConfig, feedAuthEnabled bool, riderSvc *riderService, catalog *gtfsCatalog, mapPMTilesURL *string) (http.Handler, error) {
 
 	mux := newMux(store, tracker, rateLimiter, jwtSecret, ttls, startTime, loginLimiter, refreshLimiter, cfg.trustProxy, feedAuthEnabled, riderSvc, catalog, mapPMTilesURL)
 
 	if cfg.enabled {
-		ui, err := newAdminUI(store, tracker, jwtSecret, loginLimiter, cfg)
+		ui, err := newAdminUI(store, tracker, jwtSecret, adminLoginLimiter, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("init admin UI: %w", err)
 		}
@@ -278,6 +278,11 @@ func main() {
 	loginLimiter := NewLoginRateLimiter()
 	defer loginLimiter.Stop()
 
+	// The admin sign-in has its own budget: drivers starting a shift behind
+	// the dispatcher's address must not be able to use it up.
+	adminLoginLimiter := NewLoginRateLimiter()
+	defer adminLoginLimiter.Stop()
+
 	refreshLimiter := NewRefreshRateLimiter()
 	defer refreshLimiter.Stop()
 
@@ -356,7 +361,7 @@ func main() {
 
 	startTime := time.Now()
 
-	handler, err := newHandler(store, tracker, rateLimiter, loginLimiter, refreshLimiter, jwtSecret, ttls, startTime,
+	handler, err := newHandler(store, tracker, rateLimiter, loginLimiter, adminLoginLimiter, refreshLimiter, jwtSecret, ttls, startTime,
 		adminUIConfig{enabled: adminUIEnabled(), trustProxy: trustProxyHeaders(), stalenessThreshold: maxAge}, feedAuthEnabled, riderSvc, catalog, mapPMTilesURL)
 	if err != nil {
 		slog.Error("failed to build handler", "error", err)

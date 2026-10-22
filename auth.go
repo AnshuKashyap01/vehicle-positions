@@ -146,10 +146,10 @@ func handleLogin(fetcher UserFetcher, refreshTokens RefreshTokenCreator, secret 
 			return
 		}
 
-		// Successful authentication: clear the per-email rate-limit window so
-		// legitimate repeat logins aren't counted toward the brute-force budget.
+		// Successful authentication: legitimate logins aren't counted toward
+		// the brute-force budget.
 		if limiter != nil {
-			limiter.ResetEmail(req.Email)
+			limiter.RecordSuccess(clientIP(r, trustProxy), req.Email)
 		}
 
 		accessToken, err := generateJWT(user, secret, ttls.access)
