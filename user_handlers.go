@@ -25,6 +25,10 @@ type UpdateUserRequest struct {
 	// Password, when non-empty, replaces the user's password. Blank keeps
 	// the current one — the same contract as the admin UI's edit form.
 	Password string `json:"password"`
+	// Active, when non-nil, toggles the user's active flag. Deactivation
+	// revokes every refresh token the user holds. Omitting the field
+	// leaves the flag unchanged.
+	Active *bool `json:"active,omitempty"`
 }
 
 // handleListUsers returns one page of users, newest first, bounded by the
@@ -234,6 +238,50 @@ func handleUpdateUser(store UserUpdater) http.HandlerFunc {
 			}
 		}
 
+		if req.Active != nil {
+			// Refuse to deactivate the last active admin: with no active admin
+			// left, no one can sign in to the admin UI, and restarting with
+			// ADMIN_BOOTSTRAP doesn't recover (bootstrapAdmin counts existing
+			// admins regardless of active flag), so the lockout would require
+			// manual SQL to undo. Mirrors the same guard in setUserActive
+			// (admin_page_handlers.go).
+			if !*req.Active {
+				target, err := store.GetUser(r.Context(), id)
+				if err != nil {
+					if errors.Is(err, ErrUserNotFound) {
+						writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+						return
+					}
+					slog.Error("failed to get user for last-admin check", "id", id, "error", err)
+					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+					return
+				}
+				if target.Role == roleAdmin && target.Active {
+					admins, err := store.CountActiveUsersByRole(r.Context(), roleAdmin)
+					if err != nil {
+						slog.Error("failed to count active admins", "error", err)
+						writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+						return
+					}
+					if admins <= 1 {
+						writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "cannot deactivate the last active admin"})
+						return
+					}
+				}
+			}
+
+			if err := store.SetUserActiveAndRevokeSessions(r.Context(), id, *req.Active); err != nil {
+				if errors.Is(err, ErrUserNotFound) {
+					writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+					return
+				}
+				slog.Error("failed to set user active", "id", id, "active", *req.Active, "error", err)
+				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+				return
+			}
+			user.Active = *req.Active
+		}
+
 		writeJSON(w, http.StatusOK, user)
 	}
 }
@@ -249,6 +297,10 @@ func handleDeleteUser(store UserDeleter) http.HandlerFunc {
 		if err := store.DeleteUser(r.Context(), id); err != nil {
 			if errors.Is(err, ErrUserNotFound) {
 				writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+				return
+			}
+			if errors.Is(err, ErrUserHasTrips) {
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "cannot delete a user who has trips; deactivate the user instead"})
 				return
 			}
 			slog.Error("failed to delete user", "id", id, "error", err)
