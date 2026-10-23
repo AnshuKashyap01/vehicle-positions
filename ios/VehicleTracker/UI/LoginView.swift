@@ -11,11 +11,21 @@ struct LoginView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Server") {
+                Section {
                     TextField("https://positions.example.org", text: $serverURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .disabled(session.settings.serverIsManaged)
+                        .foregroundStyle(session.settings.serverIsManaged ? .secondary : .primary)
+                } header: {
+                    Text("Server")
+                } footer: {
+                    if session.settings.serverIsManaged {
+                        Text("Set by your agency.")
+                    } else if session.settings.managedServerURLIsInvalid {
+                        Text("Your agency's server setting is not a valid address, so type it here.")
+                    }
                 }
                 Section("Driver") {
                     TextField("Email", text: $email)
@@ -41,7 +51,7 @@ struct LoginView: View {
             }
             .navigationTitle("OBA Vehicle Tracker")
             .onAppear {
-                serverURL = session.settings.serverURLString
+                serverURL = session.settings.signInServerURL?.absoluteString ?? ""
                 email = session.settings.email
             }
         }
