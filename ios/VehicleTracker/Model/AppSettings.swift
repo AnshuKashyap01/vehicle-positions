@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import OSLog
+import UIKit
 
 /// What the driver typed last time, so the login screen and the route list
 /// start where they left off, and the server address the agency sets, if any.
@@ -15,7 +16,7 @@ final class AppSettings {
 
     private let defaults: UserDefaults
     private let log = Logger(subsystem: "org.onebusaway.vehicletracker", category: "settings")
-    @ObservationIgnored private var managedObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private var managedObservers: [any NSObjectProtocol] = []
 
     var serverURLString: String {
         didSet { defaults.set(serverURLString, forKey: Keys.serverURL) }
@@ -30,7 +31,8 @@ final class AppSettings {
         didSet { defaults.set(lastVehicleID, forKey: Keys.lastVehicle) }
     }
     /// The agency's server from managed configuration, when it is one the app
-    /// may use. Read again whenever the defaults change.
+    /// may use. Read again when the defaults change and when the app comes to
+    /// the front.
     private(set) var managedServerURL: URL?
     /// The agency set a server the app may not use, so it is ignored and the
     /// driver types one instead.
@@ -53,15 +55,21 @@ final class AppSettings {
         if !defaultServerURL.isEmpty && self.defaultServerURL == nil {
             log.warning("ignoring the built-in DEFAULT_SERVER_URL: not an address the app may use")
         }
-        managedObserver = NotificationCenter.default.addObserver(
-            forName: UserDefaults.didChangeNotification, object: nil, queue: .main
-        ) { [weak self] _ in
+        let reread: @Sendable (Notification) -> Void = { [weak self] _ in
             MainActor.assumeIsolated { self?.readManagedConfiguration() }
         }
+        let center = NotificationCenter.default
+        managedObservers = [
+            center.addObserver(forName: UserDefaults.didChangeNotification, object: defaults, queue: .main, using: reread),
+            // Device management changes the settings from outside the app,
+            // which doesn't post the notification above.
+            center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main,
+                               using: reread),
+        ]
     }
 
     isolated deinit {
-        if let managedObserver { NotificationCenter.default.removeObserver(managedObserver) }
+        managedObservers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
     /// Moves the route to the front of the recent list, keeping at most five.

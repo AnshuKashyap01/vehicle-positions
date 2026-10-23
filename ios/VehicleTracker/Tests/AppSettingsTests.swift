@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import UIKit
 @testable import VehicleTracker
 
 /// Real `UserDefaults` suites rather than a fake, so the settings read and
@@ -85,5 +86,19 @@ import Testing
             defaults.removeObject(forKey: AppSettings.managedConfigurationKey)
             #expect(await eventually { !settings.serverIsManaged })
         }
+    }
+
+    /// Device management changes the settings from outside the app, which
+    /// doesn't post `didChangeNotification` to it. A second `UserDefaults` on
+    /// the same suite stands in for that.
+    @Test func aManagedValueSetFromOutsideIsReadWhenTheAppComesToTheFront() async {
+        let name = "AppSettingsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let settings = AppSettings(defaults: defaults)
+        UserDefaults(suiteName: name)!.set([AppSettings.managedServerURLKey: Self.managed],
+                                           forKey: AppSettings.managedConfigurationKey)
+        NotificationCenter.default.post(name: UIApplication.willEnterForegroundNotification, object: nil)
+        #expect(await eventually { settings.managedServerURL?.absoluteString == Self.managed })
     }
 }
