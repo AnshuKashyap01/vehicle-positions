@@ -287,9 +287,12 @@ final class TripSession {
     /// `.active`/`.paused`; a second call while one is already `.ending` (or
     /// any other phase) is a no-op, so `end()` is never sent twice at once.
     /// If the server cannot be reached the trip stays active and the error is
-    /// thrown; the driver can retry or `endLocally()`. If something else
-    /// (namely `endLocally()`) already moved the phase on while the request
-    /// was in flight, that change is left alone rather than resurrected.
+    /// thrown; the driver can retry or `endLocally()`. A 404 is not a failure:
+    /// the server has no open trip under that id, so an earlier end got
+    /// through and only its reply was lost, or a dispatcher ended it. If
+    /// something else (namely `endLocally()`) already moved the phase on while
+    /// the request was in flight, that change is left alone rather than
+    /// resurrected.
     func end() async throws {
         let before: Phase
         switch phase {
@@ -302,6 +305,8 @@ final class TripSession {
         phase = .ending(active)
         do {
             try await api.endTrip(id: active.serverTripID)
+        } catch APIError.status(404, _) {
+            log.notice("the server had no open trip \(active.serverTripID) to end; treating it as ended")
         } catch {
             if phase == .ending(active) {
                 phase = before

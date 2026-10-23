@@ -375,6 +375,36 @@ import VehiclePositionsKit
         #expect(await eventually { api.posted.count == 1 })
     }
 
+    /// A 404 means the server has no open trip under that id: an earlier end
+    /// got through and only its reply was lost, or a dispatcher ended it.
+    @Test func endTreatsA404AsAlreadyEnded() async throws {
+        api.endError = APIError.status(404, message: "active trip not found")
+        let s = session()
+        try await s.signIn(serverURL: server, email: "d@test.com", password: "pw")
+        try await s.start(vehicle: bus, tripID: "T1")
+
+        try await s.end()
+        #expect(api.ends == [42])
+        #expect(s.phase == .idle)
+        #expect(try store.load() == nil)
+        #expect(locations.handles[0].invalidated)
+    }
+
+    /// Only a 404 means the trip is already ended; any other status is a
+    /// failure the driver has to see, so a new server error is not mistaken
+    /// for success.
+    @Test func endTreatsOtherStatusesAsFailures() async throws {
+        api.endError = APIError.status(500, message: "")
+        let s = session()
+        try await s.signIn(serverURL: server, email: "d@test.com", password: "pw")
+        try await s.start(vehicle: bus, tripID: "T1")
+
+        await #expect(throws: APIError.status(500, message: "")) { try await s.end() }
+        if case .active = s.phase {} else { Issue.record("a failed end keeps the trip active") }
+        #expect(try store.load() != nil)
+        #expect(!locations.handles[0].invalidated)
+    }
+
     @Test func relaunchWithAStoredTripIsPausedAndResumes() async throws {
         let (s, active) = try pausedSession()
         #expect(s.phase == .paused(active))
