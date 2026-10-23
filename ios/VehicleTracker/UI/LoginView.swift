@@ -50,9 +50,9 @@ struct LoginView: View {
                 }
             }
             .navigationTitle("OBA Vehicle Tracker")
-            .onAppear {
-                serverURL = session.settings.signInServerURL?.absoluteString ?? ""
-                email = session.settings.email
+            .onAppear { email = session.settings.email }
+            .onChange(of: session.settings.signInServerURL, initial: true) { _, url in
+                serverURL = url?.absoluteString ?? ""
             }
         }
     }

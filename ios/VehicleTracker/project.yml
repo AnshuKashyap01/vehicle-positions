@@ -57,6 +57,9 @@ targets:
         CFBundleDisplayName: OBA Vehicle Tracker
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleURLTypes:
+          - CFBundleURLName: $(PRODUCT_BUNDLE_IDENTIFIER)
+            CFBundleURLSchemes: [obavehicletracker]
         OBADefaultServerURL: $(DEFAULT_SERVER_URL)
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
