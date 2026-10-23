@@ -12,3 +12,11 @@ nonisolated struct ActiveTrip: Sendable, Codable, Equatable {
     /// `TripSession.adoptStoredTrip`.
     var driverEmail: String
 }
+
+/// The end of a trip that was ended on this phone only, kept until the server
+/// confirms it. `driverEmail` is the driver who started the trip, so only
+/// their next start sends it.
+nonisolated struct PendingTripEnd: Sendable, Codable, Equatable {
+    var serverTripID: Int64
+    var driverEmail: String
+}
