@@ -2,6 +2,7 @@ import SwiftUI
 
 struct LoginView: View {
     @Environment(TripSession.self) private var session
+    @Environment(ServerSetup.self) private var serverSetup
     @State private var serverURL = ""
     @State private var email = ""
     @State private var password = ""
@@ -53,6 +54,9 @@ struct LoginView: View {
             .onAppear { email = session.settings.email }
             .onChange(of: session.settings.signInServerURL, initial: true) { _, url in
                 serverURL = url?.absoluteString ?? ""
+            }
+            .onChange(of: serverSetup.linkedServer) { _, url in
+                if let url { serverURL = url.absoluteString }
             }
         }
     }

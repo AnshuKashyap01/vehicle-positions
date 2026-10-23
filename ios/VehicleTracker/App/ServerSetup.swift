@@ -8,6 +8,12 @@ import OSLog
 final class ServerSetup {
     /// The alert on screen, until the driver answers it.
     private(set) var prompt: ServerSetupLink.Decision?
+    /// The server the driver agreed to, for the sign-in screen to put in its
+    /// field. It is not saved: sign-in saves the address it used once it
+    /// succeeds. The Keychain outlives deleting the app, so a saved address
+    /// next to a token left from before would sign the app in to the link's
+    /// host on the next launch, sending it that token.
+    private(set) var linkedServer: URL?
 
     private let session: TripSession
     private let log = Logger(subsystem: "org.onebusaway.vehicletracker", category: "server-setup")
@@ -17,6 +23,9 @@ final class ServerSetup {
     }
 
     func open(_ link: URL) {
+        // Cleared first, so agreeing to the same link again still changes it
+        // and the sign-in screen fills its field again.
+        linkedServer = nil
         let signedInTo = session.phase == .signedOut ? nil : session.settings.serverURL
         let decision = ServerSetupLink.decide(link, signedInTo: signedInTo, isManaged: session.settings.serverIsManaged)
         switch decision {
@@ -28,7 +37,7 @@ final class ServerSetup {
         prompt = decision
     }
 
-    /// Fills in the sign-in screen's server. Checked again here, because the
+    /// Hands the server to the sign-in screen. Checked again here, because the
     /// driver may have signed in, or the agency set the server, since the
     /// link arrived.
     func confirm(_ server: URL) {
@@ -37,7 +46,7 @@ final class ServerSetup {
             log.notice("setup link not used: signed in or managed before it was confirmed")
             return
         }
-        session.settings.serverURLString = server.absoluteString
+        linkedServer = server
     }
 
     func dismiss() {
