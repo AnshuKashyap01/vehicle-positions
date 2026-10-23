@@ -8,10 +8,11 @@ import Testing
     nonisolated struct Sources: CustomTestStringConvertible {
         var managed: String?
         var saved: String?
+        var builtIn = ""
         var expected: String?
         var managedIsInvalid = false
 
-        var testDescription: String { "managed \(managed ?? "-"), saved \(saved ?? "-")" }
+        var testDescription: String { "managed \(managed ?? "-"), saved \(saved ?? "-"), built in \(builtIn)" }
     }
 
     static let managed = "https://managed.example.org"
@@ -29,9 +30,14 @@ import Testing
 
     @Test(arguments: [
         Sources(managed: "https://managed.example.org", saved: "https://saved.example.org",
-                expected: "https://managed.example.org"),
-        Sources(managed: nil, saved: "https://saved.example.org", expected: "https://saved.example.org"),
+                builtIn: "https://default.example.org", expected: "https://managed.example.org"),
+        Sources(managed: nil, saved: "https://saved.example.org", builtIn: "https://default.example.org",
+                expected: "https://saved.example.org"),
+        Sources(managed: nil, saved: nil, builtIn: "https://default.example.org", expected: "https://default.example.org"),
         Sources(managed: nil, saved: nil, expected: nil),
+        Sources(managed: nil, saved: nil, builtIn: "http://default.example.org", expected: nil),
+        Sources(managed: "http://managed.example.org", saved: nil, builtIn: "https://default.example.org",
+                expected: "https://default.example.org", managedIsInvalid: true),
         Sources(managed: "http://managed.example.org", saved: "https://saved.example.org",
                 expected: "https://saved.example.org", managedIsInvalid: true),
         Sources(managed: "https://user@managed.example.org", saved: "https://saved.example.org",
@@ -45,7 +51,7 @@ import Testing
         await withDefaults { defaults in
             if let managed = sources.managed { setManaged(managed, in: defaults) }
             if let saved = sources.saved { defaults.set(saved, forKey: "serverURL") }
-            let settings = AppSettings(defaults: defaults)
+            let settings = AppSettings(defaults: defaults, defaultServerURL: sources.builtIn)
             #expect(settings.signInServerURL?.absoluteString == sources.expected)
             #expect(settings.managedServerURLIsInvalid == sources.managedIsInvalid)
         }

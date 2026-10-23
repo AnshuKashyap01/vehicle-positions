@@ -35,14 +35,24 @@ final class AppSettings {
     /// The agency set a server the app may not use, so it is ignored and the
     /// driver types one instead.
     private(set) var managedServerURLIsInvalid = false
+    /// The server an agency built into the app (`DEFAULT_SERVER_URL`). The
+    /// build fails on one that isn't https; one the app may not use is ignored.
+    let defaultServerURL: URL?
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        defaultServerURL: String = Bundle.main.object(forInfoDictionaryKey: "OBADefaultServerURL") as? String ?? ""
+    ) {
         self.defaults = defaults
+        self.defaultServerURL = ServerURLPolicy.presetURL(from: defaultServerURL)
         serverURLString = defaults.string(forKey: Keys.serverURL) ?? ""
         email = defaults.string(forKey: Keys.email) ?? ""
         recentRouteIDs = defaults.stringArray(forKey: Keys.recentRoutes) ?? []
         lastVehicleID = defaults.string(forKey: Keys.lastVehicle)
         readManagedConfiguration()
+        if !defaultServerURL.isEmpty && self.defaultServerURL == nil {
+            log.warning("ignoring the built-in DEFAULT_SERVER_URL: not an address the app may use")
+        }
         managedObserver = NotificationCenter.default.addObserver(
             forName: UserDefaults.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -70,10 +80,11 @@ final class AppSettings {
     var serverIsManaged: Bool { managedServerURL != nil }
 
     /// The address the sign-in screen starts from: the agency's, then the one
-    /// this phone last used. Only for the next sign-in: a signed-in session
-    /// keeps `serverURL`, because its token and trip belong to that server.
+    /// this phone last used, then the one built in. Only for the next sign-in:
+    /// a signed-in session keeps `serverURL`, because its token and trip
+    /// belong to that server.
     var signInServerURL: URL? {
-        managedServerURL ?? serverURL
+        managedServerURL ?? serverURL ?? defaultServerURL
     }
 
     private func readManagedConfiguration() {
