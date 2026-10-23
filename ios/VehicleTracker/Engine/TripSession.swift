@@ -259,10 +259,12 @@ final class TripSession {
     /// confirmed, and a 404 confirms it too. If one cannot be sent the start
     /// is refused with ``TripSessionError/previousTripNotEnded`` and the rest
     /// are kept. Other drivers' ends wait for their own next start: their
-    /// open trips do not block this driver's.
+    /// open trips do not block this driver's. Ends owed to another server wait
+    /// until the driver signs in there again.
     private func sendPendingEnds(_ api: any TrackerAPI) async throws {
         var pending = try store.loadPendingEnds()
-        for pendingEnd in pending where pendingEnd.driverEmail.caseInsensitiveCompare(settings.email) == .orderedSame {
+        for pendingEnd in pending where pendingEnd.isOwed(to: settings.serverURLString)
+            && pendingEnd.driverEmail.caseInsensitiveCompare(settings.email) == .orderedSame {
             do {
                 try await api.endTrip(id: pendingEnd.serverTripID)
                 log.notice("sent the end of trip \(pendingEnd.serverTripID), which was ended on this phone only")
@@ -272,7 +274,7 @@ final class TripSession {
                 log.error("could not send the end of trip \(pendingEnd.serverTripID), which was ended on this phone only: \(String(describing: error))")
                 throw TripSessionError.previousTripNotEnded
             }
-            pending.removeAll { $0.serverTripID == pendingEnd.serverTripID }
+            pending.removeAll { $0 == pendingEnd }
             try store.savePendingEnds(pending)
         }
     }
@@ -366,8 +368,10 @@ final class TripSession {
     private func rememberEnd(of active: ActiveTrip) {
         do {
             var pending = try store.loadPendingEnds()
-            if !pending.contains(where: { $0.serverTripID == active.serverTripID }) {
-                pending.append(PendingTripEnd(serverTripID: active.serverTripID, driverEmail: active.driverEmail))
+            let server = settings.serverURLString
+            if !pending.contains(where: { $0.serverTripID == active.serverTripID && $0.isOwed(to: server) }) {
+                pending.append(PendingTripEnd(serverTripID: active.serverTripID, driverEmail: active.driverEmail,
+                                              serverURL: server))
                 try store.savePendingEnds(pending)
             }
             log.notice("remembered the end of trip \(active.serverTripID) for the next start")

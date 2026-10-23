@@ -416,7 +416,7 @@ import VehiclePositionsKit
         s.settings.email = "b@test.com"
 
         s.endLocally()
-        #expect(try store.loadPendingEnds() == [PendingTripEnd(serverTripID: 42, driverEmail: "a@test.com")])
+        #expect(try store.loadPendingEnds() == [PendingTripEnd(serverTripID: 42, driverEmail: "a@test.com", serverURL: server.absoluteString)])
         #expect(try store.load() == nil)
         #expect(s.phase == .idle)
         #expect(api.ends.isEmpty, "ending locally does not call the server")
@@ -440,7 +440,7 @@ import VehiclePositionsKit
     /// A 404 means the server has no open trip under that id, which is what
     /// the end was for.
     @Test func aPendingEndAnswered404CountsAsSent() async throws {
-        try store.savePendingEnds([PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com")])
+        try store.savePendingEnds([PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com", serverURL: server.absoluteString)])
         api.endError = APIError.status(404, message: "active trip not found")
         let s = session()
         try await s.signIn(serverURL: server, email: "d@test.com", password: "pw")
@@ -456,7 +456,7 @@ import VehiclePositionsKit
     /// is not asked for anything else: no trip fetched, no trip started.
     @Test(arguments: [APIError.transport("offline"), APIError.status(500, message: "")])
     func aPendingEndThatCannotBeSentRefusesTheStart(_ failure: APIError) async throws {
-        let owed = PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com")
+        let owed = PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com", serverURL: server.absoluteString)
         try store.savePendingEnds([owed])
         api.endError = failure
         let s = session()
@@ -476,8 +476,8 @@ import VehiclePositionsKit
     /// their pending end waits for their own next start. The email matches
     /// case-insensitively, as it does for a stored trip.
     @Test func onlyThisDriversPendingEndsAreSent() async throws {
-        let theirs = PendingTripEnd(serverTripID: 7, driverEmail: "a@test.com")
-        try store.savePendingEnds([theirs, PendingTripEnd(serverTripID: 8, driverEmail: "B@Test.com")])
+        let theirs = PendingTripEnd(serverTripID: 7, driverEmail: "a@test.com", serverURL: server.absoluteString)
+        try store.savePendingEnds([theirs, PendingTripEnd(serverTripID: 8, driverEmail: "B@Test.com", serverURL: server.absoluteString)])
         let s = session()
         try await s.signIn(serverURL: server, email: "b@test.com", password: "pw")
 
@@ -497,7 +497,7 @@ import VehiclePositionsKit
         #expect(second.phase == .paused(active))
 
         second.endLocally()
-        #expect(try store.loadPendingEnds() == [PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com")])
+        #expect(try store.loadPendingEnds() == [PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com", serverURL: server.absoluteString)])
     }
 
     /// The driver asked to stop; a disk that cannot hold the pending end does
@@ -513,6 +513,34 @@ import VehiclePositionsKit
         #expect(s.phase == .idle)
         #expect(try unwritable.load() == nil)
         #expect(locations.handles[0].invalidated)
+    }
+
+    /// Trip ids are numbered per server, so an end owed to another server is
+    /// not sent here, where the same id could be another trip; it waits for
+    /// the driver to sign in there again. A retyped address is still this
+    /// server, or its end would be held back and the start refused.
+    @Test func aPendingEndOwedToAnotherServerIsLeftForIt() async throws {
+        let elsewhere = PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com", serverURL: "https://other.example.org")
+        try store.savePendingEnds([elsewhere, PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com",
+                                                             serverURL: "https://Positions.example.org/")])
+        let s = session()
+        try await s.signIn(serverURL: server, email: "d@test.com", password: "pw")
+
+        try await s.start(vehicle: bus, tripID: "T1")
+        #expect(api.ends == [7])
+        #expect(try store.loadPendingEnds() == [elsewhere])
+        #expect(s.activeTrip?.serverTripID == 42)
+    }
+
+    @Test func theSameTripIDOnAnotherServerIsAnotherPendingEnd() throws {
+        let elsewhere = PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com", serverURL: "https://other.example.org")
+        try store.savePendingEnds([elsewhere])
+        let (s, _) = try pausedSession()
+
+        s.endLocally()
+        #expect(try store.loadPendingEnds() == [
+            elsewhere, PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com", serverURL: server.absoluteString),
+        ])
     }
 
     @Test func relaunchWithAStoredTripIsPausedAndResumes() async throws {

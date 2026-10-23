@@ -28,8 +28,8 @@ import Testing
         #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "active-trip.json").path(percentEncoded: false)))
     }
 
-    let owed = [PendingTripEnd(serverTripID: 7, driverEmail: "a@test.com"),
-                PendingTripEnd(serverTripID: 9, driverEmail: "b@test.com")]
+    let owed = [PendingTripEnd(serverTripID: 7, driverEmail: "a@test.com", serverURL: "https://positions.example.org"),
+                PendingTripEnd(serverTripID: 9, driverEmail: "b@test.com", serverURL: "https://other.example.org")]
 
     /// What `TripSession` relies on, whichever store holds the pending ends.
     func checkPendingEnds(in store: any ActiveTripStoring) throws {
@@ -73,5 +73,20 @@ import Testing
         try Data("not json".utf8).write(to: directory.appending(path: "pending-trip-ends.json"))
 
         #expect(try FileActiveTripStore(directory: directory).loadPendingEnds().isEmpty)
+    }
+
+    @Test(arguments: [
+        ("https://positions.example.org", true),
+        ("HTTPS://Positions.Example.org/", true),
+        ("https://positions.example.org:443", true),
+        (" https://positions.example.org ", true),
+        ("https://positions.example.org:8443", false),
+        ("http://positions.example.org", false),
+        ("https://positions.example.org/agency", false),
+        ("https://other.example.org", false),
+    ])
+    func aPendingEndIsOwedToItsServerHoweverItsAddressIsTyped(_ address: String, _ owed: Bool) {
+        let end = PendingTripEnd(serverTripID: 7, driverEmail: "d@test.com", serverURL: "https://positions.example.org")
+        #expect(end.isOwed(to: address) == owed)
     }
 }
