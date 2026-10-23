@@ -134,4 +134,14 @@ nonisolated enum TripRun {
             return fromA == fromB ? a.startsAt > b.startsAt : fromA < fromB
         }
     }
+
+    /// The run the list opens at: the one just before the highlighted run, so
+    /// the highlighted run is in view under it, where Android's board opens.
+    /// The last run once every run is over; nil for an empty list.
+    static func openAt(in trips: [TripSummary], now: Date) -> String? {
+        guard let marked = highlighted(in: trips, now: now), let index = trips.firstIndex(of: marked) else {
+            return trips.last?.id
+        }
+        return trips[max(index - 1, 0)].id
+    }
 }

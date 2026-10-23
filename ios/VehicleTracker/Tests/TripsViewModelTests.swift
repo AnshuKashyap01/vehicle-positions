@@ -51,4 +51,21 @@ import Testing
         let trips = [trip("a", TripFixtures.at(6, 0), TripFixtures.at(10, 0)), trip("b", TripFixtures.at(14, 0), TripFixtures.at(15, 0))]
         #expect(TripRun.highlighted(in: trips, now: TripFixtures.at(9, 0))?.id == "a")
     }
+
+    @Test func opensAtTheRunJustBeforeTheHighlightedOne() {
+        let trips = [trip("a", TripFixtures.at(7, 0), TripFixtures.at(7, 30)), trip("b", TripFixtures.at(8, 0), TripFixtures.at(8, 30)), trip("c", TripFixtures.at(9, 0), TripFixtures.at(9, 30))]
+        #expect(TripRun.openAt(in: trips, now: TripFixtures.at(8, 10)) == "a")
+        #expect(TripRun.openAt(in: TripFixtures.frequentService, now: TripFixtures.at(14, 3)) == "13:50")
+    }
+
+    @Test func opensAtTheHighlightedRunWhenItIsTheFirst() {
+        let trips = [trip("a", TripFixtures.at(7, 0), TripFixtures.at(7, 30)), trip("b", TripFixtures.at(8, 0), TripFixtures.at(8, 30))]
+        #expect(TripRun.openAt(in: trips, now: TripFixtures.at(6, 0)) == "a")
+    }
+
+    @Test func opensAtTheLastRunOnceEveryRunIsOver() {
+        let trips = [trip("a", TripFixtures.at(7, 0), TripFixtures.at(7, 30)), trip("b", TripFixtures.at(8, 0), TripFixtures.at(8, 30))]
+        #expect(TripRun.openAt(in: trips, now: TripFixtures.at(9, 0)) == "b")
+        #expect(TripRun.openAt(in: [], now: TripFixtures.at(9, 0)) == nil)
+    }
 }
