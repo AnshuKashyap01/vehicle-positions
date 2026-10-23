@@ -988,16 +988,19 @@ When the sign-in screen opens, it uses the first of these that is set:
 
 1. the address your device management sets (section 13.1), and the driver
    can't change it;
-2. the address this phone last signed in to, or that a setup link filled in
-   (section 13.3);
+2. the address this phone last signed in to;
 3. the address built into the app (section 13.2);
 4. nothing, so the driver types it.
 
-Every one of these must be an address the app would accept if the driver typed
-it: `https://`, or plain `http://` only for `localhost`, `127.0.0.1` or a
-`.local` host. It also must not carry user info: `https://tracker.example.org@evil.example`
-goes to `evil.example`, so the app ignores it. An address that breaks either
-rule is ignored, as if it weren't set.
+A setup link (section 13.3) doesn't add to this list: it fills in the field,
+and the address is saved only once a sign-in to it succeeds.
+
+An address from device management, the built-in default or a setup link must
+be one the app would accept if the driver typed it: `https://`, or plain
+`http://` only for `localhost`, `127.0.0.1` or a `.local` host. It also must
+not carry user info: `https://tracker.example.org@evil.example` goes to
+`evil.example`, so the app ignores it. An address that breaks either rule is
+ignored, as if it weren't set. A typed address is held only to the first rule.
 
 A new address applies at the **next sign-in**. A phone that is signed in keeps
 reporting to the server it signed in to, because its sign-in and its trip belong
@@ -1017,8 +1020,7 @@ management, set the app's managed configuration (AppConfig) to:
 ```
 
 The app reads `server_url` from `com.apple.configuration.managed` when it
-starts, and again when iOS tells it that its settings changed; a new value
-always shows once the app has been restarted. The sign-in screen shows the
+starts and each time it comes to the front. The sign-in screen shows the
 address greyed out, with "Set by your agency." If the value isn't an address
 the app accepts, the app ignores it, and the field stays open with "Your
 agency's server setting is not a valid address, so type it here."
@@ -1062,7 +1064,10 @@ tracker.example.org?"** with "Only continue if your agency sent you this link."
 **Use this server** fills in the field, and the driver then signs in as usual.
 
 The link only fills in the field, and only after the driver agrees: it never
-signs in and never sends anything. Anyone can send a driver a link, and one
+signs in and never sends anything. The address isn't saved until a sign-in to
+it succeeds, so leaving the sign-in screen without signing in forgets it. That
+matters after a driver deletes and reinstalls the app: iOS keeps the old
+sign-in, and a saved address would have paired it with the link's server. Anyone can send a driver a link, and one
 that signed in to a look-alike server would hand it the driver's password. The
 question names only the host, so the driver reads where the app would go
 rather than a long address that hides it.
