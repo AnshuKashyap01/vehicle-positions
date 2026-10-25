@@ -473,7 +473,7 @@ func TestProvisionDriversGivesEachVehicleItsOwnIdentity(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	drivers, err := provisionDrivers(t.Context(), srv.Client(), srv.URL, "admin-token", "runid123", 3)
+	drivers, err := provisionDrivers(t.Context(), srv.Client(), srv.URL, "admin-token", "runid123", 3, []string{"R1", "R2"})
 	if err != nil {
 		t.Fatalf("provisionDrivers: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestProvisionDriversGivesEachVehicleItsOwnIdentity(t *testing.T) {
 		t.Errorf("created %d vehicles and %d assignments, want 3 each", len(vehicles), len(assigned))
 	}
 	for i, tk := range tokens {
-		want, _ := simVehicle(i)
+		want, _ := simVehicle(i, []string{"R1", "R2"})
 		if trips[tk] != want {
 			t.Errorf("driver %d started a trip on %q, want %q", i+1, trips[tk], want)
 		}
@@ -617,4 +617,24 @@ func TestEndTripsEndsEveryTrip(t *testing.T) {
 	if ended["a"] != 7 || ended["b"] != 8 {
 		t.Errorf("ended %v, want trip 7 by a and 8 by b", ended)
 	}
+}
+
+// TestFetchRouteIDs pins why it exists: the server rejects a route_id its
+// GTFS schedule does not have, so reports must name routes it lists.
+func TestFetchRouteIDs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/gtfs/routes" || r.Header.Get("Authorization") != "Bearer tok" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Write([]byte(`{"routes":[{"id":"R2","short_name":"2"},{"id":"R1","short_name":"1"}]}`))
+	}))
+	defer srv.Close()
+
+	ids, err := fetchRouteIDs(t.Context(), srv.Client(), srv.URL, "tok")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"R2", "R1"}, ids)
+
+	_, err = fetchRouteIDs(t.Context(), srv.Client(), srv.URL, "wrong")
+	assert.Error(t, err)
 }

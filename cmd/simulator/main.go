@@ -152,8 +152,13 @@ func main() {
 	}
 	runID = runID[:8]
 
+	scheduleRoutes, err := fetchRouteIDs(ctx, bootstrap, *baseURL, adminToken)
+	if err != nil {
+		log.Fatalf("listing GTFS routes: %v", err)
+	}
+
 	log.Printf("provisioning %d driver accounts", *numVehicles)
-	drivers, err := provisionDrivers(ctx, bootstrap, *baseURL, adminToken, runID, *numVehicles)
+	drivers, err := provisionDrivers(ctx, bootstrap, *baseURL, adminToken, runID, *numVehicles, scheduleRoutes)
 	if err != nil {
 		endTrips(bootstrap, *baseURL, drivers)
 		log.Fatalf("provisioning drivers: %v", err)
@@ -183,7 +188,7 @@ func main() {
 	var wg sync.WaitGroup
 	for i := 0; i < *numVehicles; i++ {
 		wg.Add(1)
-		vehicleID, routeID := simVehicle(i)
+		vehicleID, routeID := simVehicle(i, scheduleRoutes)
 		route := routes[i%len(routes)]
 		go func() {
 			defer wg.Done()
@@ -280,9 +285,17 @@ type createUserRequest struct {
 	Role     string `json:"role"`
 }
 
-// simVehicle names the i-th (0-based) simulated vehicle and the route it drives.
-func simVehicle(i int) (vehicleID, routeID string) {
-	return fmt.Sprintf("sim-vehicle-%03d", i+1), fmt.Sprintf("sim-route-%d", i%len(routes)+1)
+// simVehicle names the i-th (0-based) simulated vehicle and the route it
+// drives, taken in turn from the schedule's route ids. The server refuses a
+// trip on a route its GTFS schedule does not have, and then every report whose
+// route is not the trip's, so the route is a real one; none at all when the
+// schedule has no routes.
+func simVehicle(i int, scheduleRoutes []string) (vehicleID, routeID string) {
+	vehicleID = fmt.Sprintf("sim-vehicle-%03d", i+1)
+	if len(scheduleRoutes) > 0 {
+		routeID = scheduleRoutes[i%len(scheduleRoutes)]
+	}
+	return vehicleID, routeID
 }
 
 // simDriver is one provisioned driver: the token its vehicle reports with, and
@@ -326,10 +339,10 @@ func endTrips(client *http.Client, baseURL string, drivers []simDriver) {
 //
 // On an error it returns the drivers provisioned so far with it, so their
 // trips can still be ended.
-func provisionDrivers(ctx context.Context, client *http.Client, baseURL, adminToken, runID string, n int) ([]simDriver, error) {
+func provisionDrivers(ctx context.Context, client *http.Client, baseURL, adminToken, runID string, n int, scheduleRoutes []string) ([]simDriver, error) {
 	drivers := make([]simDriver, 0, n)
 	for i := 0; i < n; i++ {
-		vehicleID, routeID := simVehicle(i)
+		vehicleID, routeID := simVehicle(i, scheduleRoutes)
 		email := fmt.Sprintf("sim-driver-%03d-%s@simulator.invalid", i+1, runID)
 		password, err := randomSecret()
 		if err != nil {
@@ -532,6 +545,37 @@ func login(ctx context.Context, client *http.Client, baseURL, email, password st
 		return "", errors.New("login response contained no token")
 	}
 	return out.Token, nil
+}
+
+// fetchRouteIDs lists the route ids in the server's GTFS schedule.
+func fetchRouteIDs(ctx context.Context, client *http.Client, baseURL, token string) ([]string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/api/v1/gtfs/routes", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("GET /api/v1/gtfs/routes returned %d: %s", resp.StatusCode, bytes.TrimSpace(msg))
+	}
+	var out struct {
+		Routes []struct {
+			ID string `json:"id"`
+		} `json:"routes"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decoding routes: %w", err)
+	}
+	ids := make([]string, len(out.Routes))
+	for i, r := range out.Routes {
+		ids[i] = r.ID
+	}
+	return ids, nil
 }
 
 func sendReport(ctx context.Context, client *http.Client, baseURL, vehicleID string, report *locationReport, s *stats) {
