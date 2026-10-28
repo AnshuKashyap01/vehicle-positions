@@ -68,6 +68,7 @@ type appStore interface {
 	APIKeyManager
 	TokenRevoker
 	TokenChecker
+	UserActiveChecker
 	RefreshTokenCreator
 	RefreshTokenGetter
 	RefreshTokenRotator
@@ -81,7 +82,7 @@ type appStore interface {
 func newMux(store appStore, tracker *Tracker, rateLimiter *VehicleRateLimiter, jwtSecret []byte, ttls tokenTTLs, startTime time.Time, loginLimiter *LoginRateLimiter, refreshLimiter *RefreshRateLimiter, trustProxy, feedAuthEnabled bool, riderSvc *riderService, catalog *gtfsCatalog, mapPMTilesURL *string) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	authMiddleware := requireAuth(jwtSecret, store)
+	authMiddleware := requireAuth(jwtSecret, store, store)
 	adminMiddleware := requireAdmin()
 	riderEstimates, riderStatus := riderOrOff(riderSvc)
 

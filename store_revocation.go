@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/OneBusAway/vehicle-positions/db"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -19,6 +21,14 @@ type TokenRevoker interface {
 // TokenChecker reports whether a token's jti has been revoked.
 type TokenChecker interface {
 	IsTokenRevoked(ctx context.Context, jti string) (bool, error)
+}
+
+// UserActiveChecker reports whether the user with the given ID still has an
+// active account. requireRoles calls it after the JTI revocation check so
+// access tokens issued before a deactivation are rejected immediately rather
+// than remaining valid until the JWT's natural expiry.
+type UserActiveChecker interface {
+	IsUserActive(ctx context.Context, userID int64) (bool, error)
 }
 
 // RevokeToken adds a jti to the revocation list. It is idempotent, so logging
@@ -57,5 +67,23 @@ func (s *Store) IsTokenRevoked(ctx context.Context, jti string) (bool, error) {
 	return revoked, nil
 }
 
+// IsUserActive reports whether the user with the given ID exists and has an
+// active account. It is called by requireRoles on every authenticated request
+// so access tokens belonging to a newly deactivated user are rejected before
+// their JWT expiry rather than after it.
+func (s *Store) IsUserActive(ctx context.Context, userID int64) (bool, error) {
+	var active bool
+	err := s.pool.QueryRow(ctx,
+		`SELECT active FROM users WHERE id = $1`, userID).Scan(&active)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil // deleted user: treat as inactive
+		}
+		return false, fmt.Errorf("check user active %d: %w", userID, err)
+	}
+	return active, nil
+}
+
 var _ TokenRevoker = (*Store)(nil)
 var _ TokenChecker = (*Store)(nil)
+var _ UserActiveChecker = (*Store)(nil)

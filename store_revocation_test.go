@@ -157,3 +157,27 @@ func TestStore_RevokeToken_SurvivesUserDelete(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, ownerID, "user_id must be NULLed, not carry a dangling id")
 }
+
+func TestStore_IsUserActive(t *testing.T) {
+	store := newTestStore(t)
+	ctx := context.Background()
+	userID := insertRevocationTestUser(t, store)
+
+	// Newly created test user defaults to active.
+	active, err := store.IsUserActive(ctx, userID)
+	require.NoError(t, err)
+	assert.True(t, active, "newly inserted user must be active")
+
+	// Deactivate user.
+	_, err = store.pool.Exec(ctx, "UPDATE users SET active = false WHERE id = $1", userID)
+	require.NoError(t, err)
+
+	active, err = store.IsUserActive(ctx, userID)
+	require.NoError(t, err)
+	assert.False(t, active, "deactivated user must report active = false")
+
+	// Non-existent user should return false, nil (not error).
+	active, err = store.IsUserActive(ctx, -999999)
+	require.NoError(t, err)
+	assert.False(t, active, "non-existent user must report false without error")
+}

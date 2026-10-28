@@ -198,6 +198,8 @@ func (n *noopStore) DeleteRidePointsBefore(_ context.Context, _ time.Time) (int6
 	return 0, nil
 }
 
+func (n *noopStore) IsUserActive(_ context.Context, _ int64) (bool, error) { return true, nil }
+
 // TestAdminRoutes_DriverTokenRejected verifies that every /api/v1/admin/* route
 // is wrapped with adminMiddleware. A valid driver-role JWT must receive 403 on
 // all admin routes — not 200, 401, or 404 — proving the middleware is wired.

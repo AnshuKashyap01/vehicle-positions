@@ -620,7 +620,7 @@ func TestAccessTokenTTL_Boundary(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
 			req.Header.Set("Authorization", "Bearer "+token)
 			w := httptest.NewRecorder()
-			requireAuth(testSecret, newFakeRevocations())(dummyHandler()).ServeHTTP(w, req)
+			requireAuth(testSecret, newFakeRevocations(), nil)(dummyHandler()).ServeHTTP(w, req)
 
 			assert.Equal(t, tc.wantStatus, w.Code)
 		})
@@ -716,7 +716,7 @@ func TestLoginRefreshLogoutFlow(t *testing.T) {
 	renewed := decodeTokens(t, w)
 	require.NotEmpty(t, renewed.RefreshToken)
 
-	authed := requireAuth(testSecret, revocations)
+	authed := requireAuth(testSecret, revocations, nil)
 	logoutReq := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
 	logoutReq.Header.Set("Authorization", "Bearer "+renewed.AccessToken)
 	logoutRec := httptest.NewRecorder()

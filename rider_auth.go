@@ -30,9 +30,10 @@ func generateRiderJWT(riderID string, secret []byte, ttl time.Duration) (string,
 // a mobile client, never to a browser session, so a cookie is never accepted.
 // checker is threaded through so the rider path cannot diverge from the staff
 // one if rider tokens ever gain a jti; see checkRevoked for why it is inert
-// for them today.
+// for them today. Rider tokens carry an anonymous store ID as sub, not a
+// users.id, so the UserActiveChecker is not wired here.
 func requireRider(secret []byte, checker TokenChecker) func(http.Handler) http.Handler {
-	return requireRoles(secret, checker, false, roleRider)
+	return requireRoles(secret, checker, nil, false, roleRider)
 }
 
 // riderIDFromContext returns the rider id from claims stored by requireRider.
