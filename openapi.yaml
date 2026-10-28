@@ -193,6 +193,10 @@ paths:
         rate-limited to one report per driver per 5 seconds on average, with a
         burst of 2 so a report that network delay brings in early is not
         refused; additional reports receive HTTP 429. Request bodies are capped at 1 MiB.
+
+        The driver must be assigned to `vehicle_id`, the vehicle must exist
+        and be active, and the driver must have an active trip on it. A report
+        never creates a vehicle.
       requestBody:
         required: true
         content:
@@ -215,7 +219,22 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          description: |
+            Caller lacks the driver role, is not assigned to this vehicle (an
+            unknown vehicle counts as not assigned), or the vehicle is inactive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: |
+            The driver has no active trip on this vehicle (start one with
+            `POST /api/v1/trips/start` first), or a `trip_id` or `route_id` the
+            report carries differs from the active trip's.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '415':
           $ref: '#/components/responses/UnsupportedMediaType'
         '429':
@@ -1319,6 +1338,53 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /api/v1/admin/trips/{id}/end:
+    parameters:
+      - $ref: '#/components/parameters/TripIDPath'
+    post:
+      tags: [admin]
+      summary: End any driver's active trip
+      description: |
+        Ends the active trip with this id, whichever driver started it, and
+        returns the ended trip. Requires the `admin` role. There is no request
+        body.
+
+        Use it when a driver is locked out by a trip their phone no longer
+        knows about: `POST /api/v1/trips/start` answers `409` until that trip
+        ends. The trip ends exactly as the driver's own `POST /api/v1/trips/end`
+        leaves it: `status` becomes `completed` and `end_time` is set.
+
+        A trip that has already ended returns `409`, not `404`, so a client can
+        tell "already done" from "wrong id". As on the other trip endpoints, a
+        non-numeric `id` returns `404`.
+      responses:
+        '200':
+          description: The ended trip, with `status` `completed` and `end_time` set.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TripSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: |
+            No trip exists with this id, or the id is not a positive number
+            (`trip not found`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: The trip exists but has already ended (`trip is not active`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   /api/v1/admin/users:
     get:
       tags: [admin]
@@ -1613,7 +1679,9 @@ paths:
       description: |
         Creates a new active trip for the authenticated driver. The driver
         must be assigned to the vehicle and must not already have an active
-        trip. Request bodies are capped at 1 KiB.
+        trip. A non-empty `route_id` or `gtfs_trip_id` must be in the loaded
+        GTFS schedule, and the trip must run on the route; otherwise 400.
+        Request bodies are capped at 1 KiB.
       requestBody:
         required: true
         content:
@@ -2394,8 +2462,18 @@ components:
 
     CatalogShape:
       type: object
-      required: [length_m, points]
+      required: [length_m, points, from_stops]
       properties:
+        from_stops:
+          type: boolean
+          description: |
+            True when the feed gives the trip no shape (`shapes.txt` is
+            optional in GTFS) and this one was drawn as straight lines through
+            the trip's stops. The route curves away from those lines between
+            stops, so a client should not show the vehicle as off route by its
+            distance from this shape. Progress along it and the schedule are
+            still meaningful. Rider verification skips its on-route check for
+            these trips.
         length_m:
           type: number
           format: double

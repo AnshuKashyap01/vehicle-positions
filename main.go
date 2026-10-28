@@ -40,13 +40,14 @@ type appStore interface {
 	VehicleInfoUpdater
 	VehicleActivator
 	VehicleCreator
-	LocationSaver
+	LocationStore
 	AssignmentCreator
 	AssignmentDeleter
 	AssignmentListerByUser
 	AssignmentListerByVehicle
 	TripStarter
 	TripEnder
+	TripByIDEnder
 	TripLister
 	TripSummaryGetter
 	TripLocationLister
@@ -68,7 +69,6 @@ type appStore interface {
 	APIKeyManager
 	TokenRevoker
 	TokenChecker
-	UserActiveChecker
 	RefreshTokenCreator
 	RefreshTokenGetter
 	RefreshTokenRotator
@@ -82,7 +82,7 @@ type appStore interface {
 func newMux(store appStore, tracker *Tracker, rateLimiter *VehicleRateLimiter, jwtSecret []byte, ttls tokenTTLs, startTime time.Time, loginLimiter *LoginRateLimiter, refreshLimiter *RefreshRateLimiter, trustProxy, feedAuthEnabled bool, riderSvc *riderService, catalog *gtfsCatalog, mapPMTilesURL *string) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	authMiddleware := requireAuth(jwtSecret, store, store)
+	authMiddleware := requireAuth(jwtSecret, store)
 	adminMiddleware := requireAdmin()
 	riderEstimates, riderStatus := riderOrOff(riderSvc)
 
@@ -100,18 +100,19 @@ func newMux(store appStore, tracker *Tracker, rateLimiter *VehicleRateLimiter, j
 	mux.Handle("GET /api/v1/admin/vehicles/live", authMiddleware(adminMiddleware(handleLiveVehicles(tracker, store, store))))
 	mux.Handle("GET /api/v1/admin/vehicles/{id}", authMiddleware(adminMiddleware(handleGetVehicle(store))))
 	mux.Handle("POST /api/v1/admin/vehicles", authMiddleware(adminMiddleware(handleUpsertVehicle(store))))
-	mux.Handle("DELETE /api/v1/admin/vehicles/{id}", authMiddleware(adminMiddleware(handleDeactivateVehicle(store))))
+	mux.Handle("DELETE /api/v1/admin/vehicles/{id}", authMiddleware(adminMiddleware(handleDeactivateVehicle(store, tracker))))
 	mux.Handle("GET /api/v1/admin/vehicles/{vehicleID}/locations", authMiddleware(adminMiddleware(handleGetLocationHistory(store, store))))
 	mux.Handle("GET /api/v1/admin/trips", authMiddleware(adminMiddleware(handleListTrips(store))))
 	mux.Handle("GET /api/v1/admin/trips/{id}", authMiddleware(adminMiddleware(handleGetTrip(store))))
 	mux.Handle("GET /api/v1/admin/trips/{id}/locations", authMiddleware(adminMiddleware(handleTripLocations(store))))
+	mux.Handle("POST /api/v1/admin/trips/{id}/end", authMiddleware(adminMiddleware(handleAdminEndTrip(store))))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 	mux.HandleFunc("GET /ready", handleReadiness(store))
 
 	mux.Handle("POST /api/v1/locations", authMiddleware(handlePostLocation(store, tracker, rateLimiter)))
-	mux.Handle("POST /api/v1/trips/start", authMiddleware(handleStartTrip(store)))
+	mux.Handle("POST /api/v1/trips/start", authMiddleware(handleStartTrip(store, catalog)))
 	mux.Handle("POST /api/v1/trips/end", authMiddleware(handleEndTrip(store)))
 	mux.Handle("GET /api/v1/vehicles", authMiddleware(handleListMyVehicles(store)))
 	// Registered whether or not a map file is configured: an unconfigured server
@@ -184,11 +185,16 @@ func newHandler(store appStore, tracker *Tracker, rateLimiter *VehicleRateLimite
 	return csrf.Handler(mux), nil
 }
 
+// defaultDatabaseURL is the database the server and its subcommands use when
+// DATABASE_URL is unset.
+const defaultDatabaseURL = "postgres://postgres:postgres@localhost:5432/vehicle_positions?sslmode=disable"
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+	subcommand()
 
 	port := envOrDefault("PORT", "8080")
-	databaseURL := envOrDefault("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/vehicle_positions?sslmode=disable")
+	databaseURL := envOrDefault("DATABASE_URL", defaultDatabaseURL)
 	maxAge := envDurationOrDefault("STALENESS_THRESHOLD", 5*time.Minute)
 
 	readTimeout := envDurationOrDefault("READ_TIMEOUT", 15*time.Second)
@@ -269,6 +275,7 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	warnIfNoActiveAdmin(ctx, store)
 
 	tracker := NewTracker(maxAge)
 	defer tracker.Stop()

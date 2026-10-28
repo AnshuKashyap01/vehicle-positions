@@ -161,23 +161,23 @@ func TestStore_RevokeToken_SurvivesUserDelete(t *testing.T) {
 func TestStore_IsUserActive(t *testing.T) {
 	store := newTestStore(t)
 	ctx := context.Background()
-	userID := insertRevocationTestUser(t, store)
 
-	// Newly created test user defaults to active.
-	active, err := store.IsUserActive(ctx, userID)
+	user, err := store.CreateUser(ctx, "Active Check", "active-check@test.com", "$2a$10$dummyhash000000000000000000000000000000000000000000", "driver")
 	require.NoError(t, err)
-	assert.True(t, active, "newly inserted user must be active")
+	t.Cleanup(func() { _ = store.DeleteUser(context.Background(), user.ID) })
 
-	// Deactivate user.
-	_, err = store.pool.Exec(ctx, "UPDATE users SET active = false WHERE id = $1", userID)
+	active, err := store.IsUserActive(ctx, user.ID)
 	require.NoError(t, err)
+	assert.True(t, active)
 
-	active, err = store.IsUserActive(ctx, userID)
+	_, err = store.pool.Exec(ctx, "UPDATE users SET active = false WHERE id = $1", user.ID)
 	require.NoError(t, err)
-	assert.False(t, active, "deactivated user must report active = false")
+	active, err = store.IsUserActive(ctx, user.ID)
+	require.NoError(t, err)
+	assert.False(t, active, "deactivated")
 
-	// Non-existent user should return false, nil (not error).
-	active, err = store.IsUserActive(ctx, -999999)
+	require.NoError(t, store.DeleteUser(ctx, user.ID))
+	active, err = store.IsUserActive(ctx, user.ID)
 	require.NoError(t, err)
-	assert.False(t, active, "non-existent user must report false without error")
+	assert.False(t, active, "deleted")
 }

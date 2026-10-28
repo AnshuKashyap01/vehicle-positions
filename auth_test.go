@@ -274,7 +274,7 @@ func TestRequireAuth_MissingHeader(t *testing.T) {
 	req := httptest.NewRequest("POST", "/api/v1/locations", nil)
 	w := httptest.NewRecorder()
 
-	requireAuth(testSecret, newFakeRevocations(), nil)(dummyHandler()).ServeHTTP(w, req)
+	requireAuth(testSecret, newFakeRevocations())(dummyHandler()).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
@@ -294,7 +294,7 @@ func TestRequireAuth_MalformedHeader(t *testing.T) {
 			req.Header.Set("Authorization", tc.header)
 			w := httptest.NewRecorder()
 
-			requireAuth(testSecret, newFakeRevocations(), nil)(dummyHandler()).ServeHTTP(w, req)
+			requireAuth(testSecret, newFakeRevocations())(dummyHandler()).ServeHTTP(w, req)
 
 			assert.Equal(t, http.StatusUnauthorized, w.Code)
 		})
@@ -306,7 +306,7 @@ func TestRequireAuth_InvalidToken(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer notavalidtoken")
 	w := httptest.NewRecorder()
 
-	requireAuth(testSecret, newFakeRevocations(), nil)(dummyHandler()).ServeHTTP(w, req)
+	requireAuth(testSecret, newFakeRevocations())(dummyHandler()).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
@@ -323,7 +323,7 @@ func TestRequireAuth_ExpiredToken(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tokenStr)
 	rr := httptest.NewRecorder()
 
-	middleware := requireAuth(testSecret, newFakeRevocations(), nil)
+	middleware := requireAuth(testSecret, newFakeRevocations())
 	handler := middleware(dummyHandler())
 
 	handler.ServeHTTP(rr, req)
@@ -349,7 +349,7 @@ func TestRequireAuth_ValidToken(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	requireAuth(testSecret, newFakeRevocations(), nil)(handler).ServeHTTP(w, req)
+	requireAuth(testSecret, newFakeRevocations())(handler).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 }
@@ -358,7 +358,7 @@ func TestRequireAuthCookieFallback(t *testing.T) {
 	token, err := generateJWT(&User{ID: 3, Email: "admin@test.com", Role: "admin", Active: true}, testSecret, defaultAccessTokenTTL)
 	require.NoError(t, err)
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
-	h := requireAuth(testSecret, newFakeRevocations(), nil)(next)
+	h := requireAuth(testSecret, newFakeRevocations())(next)
 
 	t.Run("cookie only → 200", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -426,7 +426,7 @@ func TestRequireAuth_WrongSecret(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tokenStr)
 	rr := httptest.NewRecorder()
 
-	middleware := requireAuth(testSecret, newFakeRevocations(), nil)
+	middleware := requireAuth(testSecret, newFakeRevocations())
 	handler := middleware(dummyHandler())
 
 	handler.ServeHTTP(rr, req)
@@ -443,7 +443,7 @@ func TestRequireAuth_AlgorithmConfusion(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tokenStr)
 	rr := httptest.NewRecorder()
 
-	middleware := requireAuth(testSecret, newFakeRevocations(), nil)
+	middleware := requireAuth(testSecret, newFakeRevocations())
 	handler := middleware(dummyHandler())
 
 	handler.ServeHTTP(rr, req)
@@ -466,7 +466,7 @@ func TestRequireAdmin_AdminAllowed(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	requireAuth(testSecret, newFakeRevocations(), nil)(requireAdmin()(handler)).ServeHTTP(w, req)
+	requireAuth(testSecret, newFakeRevocations())(requireAdmin()(handler)).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "admin", receivedRole)
@@ -480,7 +480,7 @@ func TestRequireAdmin_DriverDenied(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 
-	requireAuth(testSecret, newFakeRevocations(), nil)(requireAdmin()(dummyHandler())).ServeHTTP(w, req)
+	requireAuth(testSecret, newFakeRevocations())(requireAdmin()(dummyHandler())).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 
@@ -514,7 +514,7 @@ func TestRequireAdmin_EmptyRole(t *testing.T) {
 
 	// Over the real chain requireAuth now rejects any role outside
 	// driver/admin at the door, so the token never reaches requireAdmin.
-	requireAuth(testSecret, newFakeRevocations(), nil)(requireAdmin()(dummyHandler())).ServeHTTP(w, req)
+	requireAuth(testSecret, newFakeRevocations())(requireAdmin()(dummyHandler())).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	assert.Equal(t, "forbidden", decodeError(t, w))
@@ -549,7 +549,7 @@ func TestRequireAdmin_InvalidRoleType(t *testing.T) {
 
 	// A non-string role reads as "" to requireAuth's role check, so the
 	// request is denied at the door before requireAdmin runs.
-	requireAuth(testSecret, newFakeRevocations(), nil)(requireAdmin()(dummyHandler())).ServeHTTP(w, req)
+	requireAuth(testSecret, newFakeRevocations())(requireAdmin()(dummyHandler())).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	assert.Equal(t, "forbidden", decodeError(t, w))
@@ -567,7 +567,7 @@ func TestRequireAdmin_NoAuthHeader(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/v1/admin/status", nil)
 	w := httptest.NewRecorder()
 
-	requireAuth(testSecret, newFakeRevocations(), nil)(requireAdmin()(dummyHandler())).ServeHTTP(w, req)
+	requireAuth(testSecret, newFakeRevocations())(requireAdmin()(dummyHandler())).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
@@ -575,7 +575,7 @@ func TestRequireAdmin_NoAuthHeader(t *testing.T) {
 func TestRequireAuth_RejectsRiderRole(t *testing.T) {
 	riderTok, _ := generateRiderJWT("rider-1", testSecret, time.Hour)
 	called := false
-	h := requireAuth(testSecret, newFakeRevocations(), nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true }))
+	h := requireAuth(testSecret, newFakeRevocations())(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true }))
 	req := httptest.NewRequest("GET", "/x", nil)
 	req.Header.Set("Authorization", "Bearer "+riderTok)
 	w := httptest.NewRecorder()
@@ -594,6 +594,8 @@ type fakeRevocations struct {
 	lastUserID    int64
 	lastExpiresAt time.Time
 	revokeCalls   int
+	inactive      map[int64]bool
+	userErr       error // fails only IsUserActive
 }
 
 func newFakeRevocations() *fakeRevocations {
@@ -606,6 +608,17 @@ func (f *fakeRevocations) IsTokenRevoked(_ context.Context, jti string) (bool, e
 	}
 	_, ok := f.revoked[jti]
 	return ok, nil
+}
+
+// IsUserActive treats every user as active unless listed in inactive.
+func (f *fakeRevocations) IsUserActive(_ context.Context, userID int64) (bool, error) {
+	if f.userErr != nil {
+		return false, f.userErr
+	}
+	if f.err != nil {
+		return false, f.err
+	}
+	return !f.inactive[userID], nil
 }
 
 func (f *fakeRevocations) RevokeToken(_ context.Context, jti string, userID int64, expiresAt time.Time) error {
@@ -695,111 +708,12 @@ func TestRequireAuth_RejectsRevokedToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
-	requireAuth(testSecret, revocations, nil)(next).ServeHTTP(w, req)
+	requireAuth(testSecret, revocations)(next).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Equal(t, "invalid token", errorBody(t, w),
 		"a revoked token must be indistinguishable from a malformed one")
 	assert.False(t, reached, "the downstream handler must not run")
-}
-
-// --- requireAuth: deactivated-user access-token rejection ---
-
-// fakeUserActivity is a test stub for UserActiveChecker.
-type fakeUserActivity struct {
-	active bool
-	err    error
-}
-
-func (f *fakeUserActivity) IsUserActive(_ context.Context, _ int64) (bool, error) {
-	return f.active, f.err
-}
-
-// TestRequireAuth_RejectsDeactivatedUser verifies that a valid JWT belonging
-// to a deactivated user is rejected by the middleware. Before this fix, the
-// token would remain valid until its natural expiry.
-func TestRequireAuth_RejectsDeactivatedUser(t *testing.T) {
-	token, err := generateJWT(&User{ID: 1, Email: "driver@test.com", Role: "driver"}, testSecret, defaultAccessTokenTTL)
-	require.NoError(t, err)
-
-	reached := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reached = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-	requireAuth(testSecret, newFakeRevocations(), &fakeUserActivity{active: false})(next).ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
-	assert.Equal(t, "invalid token", errorBody(t, w))
-	assert.False(t, reached, "the downstream handler must not run for a deactivated user")
-}
-
-// TestRequireAuth_AllowsActiveUser is the positive counterpart: a valid JWT
-// from an active user passes through when UserActiveChecker is wired.
-func TestRequireAuth_AllowsActiveUser(t *testing.T) {
-	token, err := generateJWT(&User{ID: 1, Email: "driver@test.com", Role: "driver"}, testSecret, defaultAccessTokenTTL)
-	require.NoError(t, err)
-
-	reached := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reached = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-	requireAuth(testSecret, newFakeRevocations(), &fakeUserActivity{active: true})(next).ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.True(t, reached)
-}
-
-// TestRequireAuth_ActiveCheckErrorFailsClosed mirrors the JTI revocation
-// check: if the DB is down, the middleware must reject the request.
-func TestRequireAuth_ActiveCheckErrorFailsClosed(t *testing.T) {
-	token, err := generateJWT(&User{ID: 1, Email: "driver@test.com", Role: "driver"}, testSecret, defaultAccessTokenTTL)
-	require.NoError(t, err)
-
-	reached := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reached = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-	requireAuth(testSecret, newFakeRevocations(), &fakeUserActivity{err: errors.New("db down")})(next).ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
-	assert.Equal(t, "internal server error", errorBody(t, w))
-	assert.False(t, reached, "the downstream handler must not run when active check fails")
-}
-
-// TestRequireAuth_NilActivityCheckerSkipsCheck ensures that passing nil for
-// the UserActiveChecker (e.g. the rider API) skips the check gracefully.
-func TestRequireAuth_NilActivityCheckerSkipsCheck(t *testing.T) {
-	token, err := generateJWT(&User{ID: 1, Email: "driver@test.com", Role: "driver"}, testSecret, defaultAccessTokenTTL)
-	require.NoError(t, err)
-
-	reached := false
-	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reached = true
-		w.WriteHeader(http.StatusOK)
-	})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	w := httptest.NewRecorder()
-	requireAuth(testSecret, newFakeRevocations(), nil)(next).ServeHTTP(w, req)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-	assert.True(t, reached, "nil activity checker should not block requests")
 }
 
 func TestRequireAuth_AllowsUnrevokedToken(t *testing.T) {
@@ -824,7 +738,7 @@ func TestRequireAuth_AllowsUnrevokedToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
-	requireAuth(testSecret, revocations, nil)(next).ServeHTTP(w, req)
+	requireAuth(testSecret, revocations)(next).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.True(t, reached, "the downstream handler must run")
@@ -854,7 +768,7 @@ func TestRequireAuth_AllowsTokenWithoutJti(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
 	req.Header.Set("Authorization", "Bearer "+tokenStr)
 	w := httptest.NewRecorder()
-	requireAuth(testSecret, newFakeRevocations(), nil)(dummyHandler()).ServeHTTP(w, req)
+	requireAuth(testSecret, newFakeRevocations())(dummyHandler()).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code, "a pre-jti token must not be locked out")
 	assert.Contains(t, logs.String(), "accepted token without jti",
@@ -877,7 +791,7 @@ func TestRequireAuth_CheckerErrorFailsClosed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
-	requireAuth(testSecret, revocations, nil)(next).ServeHTTP(w, req)
+	requireAuth(testSecret, revocations)(next).ServeHTTP(w, req)
 
 	assert.NotEqual(t, http.StatusOK, w.Code, "an undecidable revocation check must not allow the request")
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
@@ -903,7 +817,7 @@ func TestRequireAuth_RejectsTokenWithoutExp(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
 	req.Header.Set("Authorization", "Bearer "+tokenStr)
 	w := httptest.NewRecorder()
-	requireAuth(testSecret, newFakeRevocations(), nil)(dummyHandler()).ServeHTTP(w, req)
+	requireAuth(testSecret, newFakeRevocations())(dummyHandler()).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Equal(t, "invalid token", errorBody(t, w))
@@ -923,7 +837,7 @@ func TestRequireAuthCookiePath_RejectsRevokedToken(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: token})
 	w := httptest.NewRecorder()
-	requireAuth(testSecret, revocations, nil)(dummyHandler()).ServeHTTP(w, req)
+	requireAuth(testSecret, revocations)(dummyHandler()).ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 	assert.Equal(t, "invalid token", errorBody(t, w))
@@ -1109,7 +1023,7 @@ func TestLoginLogoutRevokeFlow(t *testing.T) {
 	require.NoError(t, json.NewDecoder(w.Body).Decode(&loginResp))
 	require.NotEmpty(t, loginResp.Token)
 
-	authed := requireAuth(testSecret, revocations, nil)
+	authed := requireAuth(testSecret, revocations)
 	protected := authed(dummyHandler())
 
 	call := func() *httptest.ResponseRecorder {
@@ -1130,34 +1044,6 @@ func TestLoginLogoutRevokeFlow(t *testing.T) {
 
 	after := call()
 	assert.Equal(t, http.StatusUnauthorized, after.Code, "the same token must now be rejected")
-	assert.Equal(t, "invalid token", errorBody(t, after))
-}
-
-// TestLoginThenDeactivatedThenRejected verifies that when a user is deactivated,
-// any existing access token they hold is rejected on their very next request,
-// even though the JWT itself has not expired and has not been logged out via JTI.
-func TestLoginThenDeactivatedThenRejected(t *testing.T) {
-	activity := &fakeUserActivity{active: true}
-	token, err := generateJWT(&User{ID: 42, Email: "driver@test.com", Role: "driver"}, testSecret, defaultAccessTokenTTL)
-	require.NoError(t, err)
-
-	protected := requireAuth(testSecret, newFakeRevocations(), activity)(dummyHandler())
-
-	call := func() *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
-		req.Header.Set("Authorization", "Bearer "+token)
-		rec := httptest.NewRecorder()
-		protected.ServeHTTP(rec, req)
-		return rec
-	}
-
-	require.Equal(t, http.StatusOK, call().Code, "an active user's access token must work")
-
-	// Admin deactivates user 42
-	activity.active = false
-
-	after := call()
-	assert.Equal(t, http.StatusUnauthorized, after.Code, "the token must be rejected immediately upon deactivation")
 	assert.Equal(t, "invalid token", errorBody(t, after))
 }
 
@@ -1186,4 +1072,38 @@ func TestHandleLogin_SuccessesDoNotUseIPBudget(t *testing.T) {
 		limiter.Allow("192.0.2.1", "nobody-"+strconv.Itoa(i)+"@test.com")
 	}
 	assert.False(t, limiter.Allow("192.0.2.1", "next@test.com"))
+}
+
+// TestRequireAuth_RejectsTokenOfDeactivatedOrDeletedUser: deactivating or
+// deleting a driver stops their existing access token at once, not when it
+// expires up to a day later.
+func TestRequireAuth_RejectsTokenOfDeactivatedOrDeletedUser(t *testing.T) {
+	token, err := generateJWT(&User{ID: 5, Email: "dismissed@test.com", Role: "driver"}, testSecret, defaultAccessTokenTTL)
+	require.NoError(t, err)
+	revocations := newFakeRevocations()
+	revocations.inactive = map[int64]bool{5: true} // the fake's view of both cases
+
+	reached := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { reached = true })
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	requireAuth(testSecret, revocations)(next).ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, "invalid token", errorBody(t, w))
+	assert.False(t, reached)
+}
+
+func TestRequireAuth_UserCheckErrorFailsClosed(t *testing.T) {
+	token, err := generateJWT(&User{ID: 5, Email: "driver@test.com", Role: "driver"}, testSecret, defaultAccessTokenTTL)
+	require.NoError(t, err)
+	revocations := newFakeRevocations()
+	revocations.userErr = errors.New("database unavailable")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/locations", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	requireAuth(testSecret, revocations)(dummyHandler()).ServeHTTP(w, req)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }

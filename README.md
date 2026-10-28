@@ -60,11 +60,12 @@ the admin UI's edit form, or by sending `password` in
 `PUT /api/v1/admin/users/{id}`) does the same — that is what makes a password
 reset an effective response to a stolen phone.
 
-Neither ends an access token that has already been issued: it stays valid
-until it expires or until that session is logged out, which is up to
-`ACCESS_TOKEN_TTL` for API clients and up to 24 hours for the admin UI's
-session cookie. Forcing those already-issued sessions to end is a follow-up —
-it needs a per-user cutoff rather than the per-token blocklist added here.
+Deactivating or deleting a user also ends the access tokens and admin UI
+session cookies already issued to them: every authenticated request checks
+that the user still exists and is active. A password change does not end an
+access token that has already been issued: it stays valid until it expires or
+until that session is logged out, which is up to `ACCESS_TOKEN_TTL` for API
+clients and up to 24 hours for the admin UI's session cookie.
 
 Behind a reverse proxy (nginx, an ALB, etc.), set `TRUST_PROXY_HEADERS=true`
 so the server reads the real client IP and scheme from `X-Forwarded-For` /
@@ -302,6 +303,7 @@ The feed is served at a configurable HTTP endpoint (e.g., `GET /gtfs-rt/vehicle-
 |`DELETE /api/v1/admin/api-keys/{id}`|DELETE|Revoke a feed API key                               |
 |`POST /api/v1/trips/start`          |POST  |Driver starts a trip (assigns vehicle to route/trip)|
 |`POST /api/v1/trips/end`            |POST  |Driver ends a trip                                  |
+|`POST /api/v1/admin/trips/{id}/end` |POST  |End any driver's active trip (admin)                |
 |`GET /api/v1/admin/status`          |GET   |System health, active vehicles, feed stats          |
 
 **Location Report Payload:**
@@ -338,13 +340,20 @@ and performs strict request validation before writing data:
 - Standard payload validation still applies (`vehicle_id`, coordinates, timestamp).
 - `trip_id` and `route_id` are capped at 100 characters; `start_date` must be a real `YYYYMMDD` date.
 - Reports are rate limited to one per five seconds per driver.
+- The driver must be assigned to `vehicle_id`, the vehicle must be active, and
+  the driver must have an active trip on it.
 
 Response codes:
 
 - `201 Created` — location accepted and persisted.
 - `400 Bad Request` — invalid JSON or payload validation failure.
 - `401 Unauthorized` — missing, malformed, or expired bearer token.
-- `403 Forbidden` — valid token whose role cannot use the driver API (e.g. a rider token).
+- `403 Forbidden` — valid token whose role cannot use the driver API (e.g. a rider token),
+  a driver not assigned to `vehicle_id` (including a `vehicle_id` that does not exist),
+  or a vehicle an admin has deactivated. The server never creates a vehicle from a report.
+- `409 Conflict` — the driver has no active trip on `vehicle_id` (start one with
+  `POST /api/v1/trips/start` first), or a `trip_id` or `route_id` the report
+  carries differs from the active trip's.
 - `415 Unsupported Media Type` — non-JSON `Content-Type`.
 - `429 Too Many Requests` — driver exceeded the ingest rate limit.
 - `500 Internal Server Error` — the location could not be persisted. The

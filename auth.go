@@ -315,12 +315,37 @@ func parseSessionToken(tokenString string, secret []byte) (jwt.MapClaims, error)
 	return claims, nil
 }
 
-// checkRevoked reports whether the token behind claims has been logged out.
+// checkRevoked reports whether the token behind claims can no longer be used:
+// it was logged out, or it is a staff token whose user has since been
+// deactivated or deleted. Deactivation and deletion stop new logins, but an
+// access token already issued would otherwise keep working until it expires.
 // It is the second half of validation, kept out of parseSessionToken so that
 // function stays pure; both token paths (the API's Authorization header and
 // the admin UI's vp_session cookie) must call it, and
 // TestAdminCookiePath_RejectsRevokedToken pins that they do.
 func checkRevoked(ctx context.Context, claims jwt.MapClaims, checker TokenChecker) (bool, error) {
+	revoked, err := checkJTIRevoked(ctx, claims, checker)
+	if err != nil || revoked {
+		return revoked, err
+	}
+	// A rider's sub names a rider, not a users row.
+	if role, _ := claims["role"].(string); role == roleRider {
+		return false, nil
+	}
+	sub, _ := claims["sub"].(string)
+	userID, err := strconv.ParseInt(sub, 10, 64)
+	if err != nil {
+		return true, nil
+	}
+	active, err := checker.IsUserActive(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	return !active, nil
+}
+
+// checkJTIRevoked reports whether the token's jti is on the revocation list.
+func checkJTIRevoked(ctx context.Context, claims jwt.MapClaims, checker TokenChecker) (bool, error) {
 	jti, _ := claims["jti"].(string)
 	if jti == "" {
 		// Intentional backwards compatibility: tokens issued before jti
@@ -346,27 +371,13 @@ func checkRevoked(ctx context.Context, claims jwt.MapClaims, checker TokenChecke
 	return checker.IsTokenRevoked(ctx, jti)
 }
 
-// userIDFromClaimsMap parses the "sub" claim (stored as a string, see generateJWT)
-// into an int64 user ID. It is used by requireRoles to check the active flag.
-func userIDFromClaimsMap(claims jwt.MapClaims) (int64, error) {
-	sub, err := claims.GetSubject()
-	if err != nil || sub == "" {
-		return 0, fmt.Errorf("missing or unreadable sub claim")
-	}
-	id, err := strconv.ParseInt(sub, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("sub claim is not a user ID: %q", sub)
-	}
-	return id, nil
-}
-
 // requireAuth is middleware that validates the Bearer JWT on the staff API. A
 // rider token is signed with the same secret and would otherwise validate
 // here, so the role is checked at the door rather than at each handler.
 // checker is consulted for every validated token so a logged-out one is
 // rejected for the rest of its lifetime.
-func requireAuth(secret []byte, checker TokenChecker, activity UserActiveChecker) func(http.Handler) http.Handler {
-	return requireRoles(secret, checker, activity, true, staffRoles...)
+func requireAuth(secret []byte, checker TokenChecker) func(http.Handler) http.Handler {
+	return requireRoles(secret, checker, true, staffRoles...)
 }
 
 // requireRoles returns middleware that validates the Bearer JWT and admits
@@ -375,14 +386,7 @@ func requireAuth(secret []byte, checker TokenChecker, activity UserActiveChecker
 // to the admin UI's browser session cookie (spec §4.2); a present-but-bad
 // header never falls back, and a client that has no browser session — the
 // rider API — never accepts a cookie at all.
-//
-// activity is consulted after the JTI revocation check: if the user whose ID
-// is in the "sub" claim is no longer active, the token is rejected immediately
-// rather than after its natural JWT expiry. This closes the window between
-// deactivation and expiry — deactivation deletes refresh tokens (blocking
-// renewal) but without this check the existing access token would still
-// authenticate until it expired.
-func requireRoles(secret []byte, checker TokenChecker, activity UserActiveChecker, allowCookie bool, roles ...string) func(http.Handler) http.Handler {
+func requireRoles(secret []byte, checker TokenChecker, allowCookie bool, roles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -435,29 +439,6 @@ func requireRoles(secret []byte, checker TokenChecker, activity UserActiveChecke
 				slog.Warn("rejected revoked token", "sub", claims["sub"], "path", r.URL.Path)
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 				return
-			}
-
-			// Reject tokens whose owner has been deactivated since they
-			// were issued. Fail closed: a DB error must not let the token
-			// through.
-			if activity != nil {
-				userID, err := userIDFromClaimsMap(claims)
-				if err != nil {
-					slog.Warn("active check: unreadable sub claim", "sub", claims["sub"], "error", err)
-					writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
-					return
-				}
-				active, err := activity.IsUserActive(r.Context(), userID)
-				if err != nil {
-					slog.Error("active check failed", "sub", claims["sub"], "error", err, "path", r.URL.Path)
-					writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
-					return
-				}
-				if !active {
-					slog.Warn("rejected token for deactivated user", "sub", claims["sub"], "path", r.URL.Path)
-					writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
-					return
-				}
 			}
 
 			ctx := contextWithClaims(r.Context(), claims)

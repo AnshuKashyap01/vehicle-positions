@@ -235,6 +235,71 @@ headsign "North" and "Bus 1" in the header; the map shows the R1 shape drawn
 in the route colour (`0077C0`) with its three stops; and — before the first
 fix — a red **No GPS** banner over "Waiting for GPS…".
 
+### Check 1b: A setup link fills in the server
+
+Steps 1 to 4 need the sign-in screen, so run them on a fresh install, before
+signing in at Check 1. They end with the server filled in for that sign-in.
+Step 5 runs once Check 1 has signed in. Each `simctl openurl` first shows
+iOS's own prompt, "Open in "OBA Vehicle Tracker"?": tap **Open**. The link
+carries the server address percent-encoded:
+
+```bash
+LINK="obavehicletracker://setup?server=$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$BASE")"
+```
+
+1. Open a link to an address with user info, which reads as `localhost` but
+   goes to `evil.example`:
+
+   ```bash
+   xcrun simctl openurl "$UDID" "obavehicletracker://setup?server=http%3A%2F%2Flocalhost%40evil.example"
+   ```
+
+   **Expected outcome:** "This link does not contain a server address the app
+   can use." The Server field doesn't change.
+
+2. Set the server the way device management does, then relaunch. `defaults`
+   has to name the app's preferences file by its path: given only the bundle
+   id, it writes to the simulator's own preferences, which the app never
+   reads. The path changes when the app is reinstalled, so look it up each
+   time:
+
+   ```bash
+   PREFS="$(xcrun simctl get_app_container "$UDID" org.onebusaway.vehicletracker data)/Library/Preferences/org.onebusaway.vehicletracker"
+   xcrun simctl terminate "$UDID" org.onebusaway.vehicletracker
+   xcrun simctl spawn "$UDID" defaults write "$PREFS" \
+     com.apple.configuration.managed -dict server_url "$BASE"
+   xcrun simctl launch "$UDID" org.onebusaway.vehicletracker
+   ```
+
+   **Expected outcome:** the Server field shows `$BASE` greyed out, with "Set
+   by your agency." under it. Opening `$LINK` gives "Your agency sets the
+   server on this phone."
+
+3. Remove the setting and relaunch:
+
+   ```bash
+   xcrun simctl terminate "$UDID" org.onebusaway.vehicletracker
+   xcrun simctl spawn "$UDID" defaults delete "$PREFS" com.apple.configuration.managed
+   xcrun simctl launch "$UDID" org.onebusaway.vehicletracker
+   ```
+
+   **Expected outcome:** the field can be edited again, and it is empty.
+
+4. Open the link: `xcrun simctl openurl "$UDID" "$LINK"`.
+
+   **Expected outcome:** an alert titled **"Use localhost?"** with "Only
+   continue if your agency sent you this link." Tap **Use this server**: the
+   Server field shows `$BASE`.
+
+   Relaunch the app without signing in. The field is empty again: the address
+   is saved only by a sign-in. Open `$LINK` and tap **Use this server** once
+   more, then sign in as Check 1 says.
+
+5. Once Check 1 has signed in, open `$LINK` again.
+
+   **Expected outcome:** "This phone is signed in to localhost. The link was
+   not used." Tap **OK**: the trip carries on.
+
 ### Check 2 — GPS playback drives the screen and the feed
 
 1. Start the simulated route (step 5 above).
@@ -383,6 +448,65 @@ curl -s "$BASE/gtfs-rt/vehicle-positions?format=json" | python3 -m json.tool
 
 `entity` should become an empty list (the key is omitted) about five minutes
 after the last report.
+
+### Check 5b: An End Locally is sent before the next start
+
+When End Trip can't reach the server, **End locally anyway** stops the trip
+on the phone only, and the server still has it open. The app remembers the end
+and sends it before the same driver's next start, which the server would
+otherwise refuse with `driver already has an active trip`. This check starts
+trips of its own.
+
+1. Start a run (route **1 Straight**, run **T1**), then stop the server:
+
+   ```bash
+   kill $(lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t)
+   ```
+
+   Tap **End Trip** and confirm. When "Could not end the trip" appears, tap
+   **End locally anyway**.
+
+   **Expected outcome:** the app goes back to the vehicle picker at once, with
+   "Could not reach the server" above `Bus 1` while the server is down.
+
+2. Start the server again with the same environment, then pick `Bus 1`,
+   route **1 Straight** and run **T1**:
+
+   ```bash
+   go run . > /tmp/vt-server.log 2>&1 &
+   ```
+
+   **Expected outcome:** the Tracking screen appears. The server log shows the
+   old trip's end, then the new start, and no `409`:
+
+   ```bash
+   grep -E '"path":"/api/v1/trips/(start|end)"' /tmp/vt-server.log
+   # {...,"msg":"request","method":"POST","path":"/api/v1/trips/end","status":200,...}
+   # {...,"msg":"request","method":"POST","path":"/api/v1/trips/start","status":201,...}
+   ```
+
+3. End the new trip through the API, as an earlier end that got through would
+   have, then tap **End Trip** on the phone and confirm. The tokens from setup
+   don't work after Check 3b's new `JWT_SECRET`, so sign in again first:
+
+   ```bash
+   login() {
+     curl -s -X POST "$BASE/api/v1/auth/login" -H 'Content-Type: application/json' \
+       -d "{\"email\":\"$1\",\"password\":\"$2\"}" \
+       | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])'
+   }
+   ADMIN_TOKEN=$(login admin@test.com password123)
+   DRIVER_TOKEN=$(login driver@example.com driverpass123)
+   TRIP_ID=$(curl -s "$BASE/api/v1/admin/trips?status=active" -H "Authorization: Bearer $ADMIN_TOKEN" \
+     | python3 -c 'import sys,json;print(json.load(sys.stdin)["trips"][0]["id"])')
+   curl -s -X POST "$BASE/api/v1/trips/end" -H "Authorization: Bearer $DRIVER_TOKEN" \
+     -H 'Content-Type: application/json' -d "{\"trip_id\":$TRIP_ID}"
+   # {"status":"trip ended"}
+   ```
+
+   **Expected outcome:** the app's own end gets a `404` (no open trip under
+   that id), and the app treats it as ended: it goes back to the routes for
+   `Bus 1`, with no "Could not end the trip".
 
 ## CarPlay
 

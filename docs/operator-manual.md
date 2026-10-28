@@ -232,6 +232,33 @@ active admin account is left:
 Create the second admin first, then make the change. Keeping at least two admin
 accounts is good practice anyway.
 
+### Locked out: no admin can sign in
+
+If the only admin has lost their password, or there is no active admin at all
+(the server logs **no active admin account** at startup), IT can restore access
+from the server host. `ADMIN_BOOTSTRAP_EMAIL` and `ADMIN_BOOTSTRAP_PASSWORD` do
+not help here: they only act on a database with no admin in it.
+
+Put the new password on the first line of a file, then run `reset-admin` with
+the email of the account to restore. With Docker Compose:
+
+```bash
+docker compose exec -T server vehicle-positions reset-admin -email ops@example.org < new-password.txt
+```
+
+On a host install, run the binary the same way, with the server's
+`DATABASE_URL` set. The account is created if it does not exist; otherwise it
+becomes an active admin with the new password. Delete the password file
+afterwards.
+
+The account can no longer renew a session it already had, so it has to sign in
+with the new password once that session expires. But a session that is already
+open, in a browser or an app, keeps working until then, which can be up to 24
+hours: the same limit as [deactivating an account](#deactivate-an-account). If
+the reset is because someone else had the account and they must be out right
+now, also have your IT contact rotate the token-signing key and restart the
+server, which signs everyone out.
+
 ---
 
 ## 6. Assigning vehicles to drivers
@@ -307,10 +334,11 @@ takes about ten minutes. Before you start, make sure the driver has an account
      each run's start time over where it is headed, with a line at the current
      time. When the schedule gives the route two directions, a switch at the top
      picks one, named after where its runs go. The times are your agency's local
-     time, whatever time zone the phone is set to. The run under way is marked
-     **Now**; otherwise the next one to start is marked **Next**. Tap the run
-     the driver is about to drive. **No runs on route 7 today** means the
-     schedule has no service on that route today.
+     time, whatever time zone the phone is set to. Of the runs not over yet, the
+     one starting nearest the current time is marked: **Now** once it has
+     started, **Next** before that. Tap the run the driver is about to drive.
+     **No runs on route 7 today** means the schedule has no service on that
+     route today.
 
    The route and trip the app reports both come from the schedule, so as long
    as OneBusAway uses the same GTFS feed (your IT contact sets this up), it can
@@ -405,6 +433,16 @@ Click **View trail** on any trip to open the map on that trip alone: the route
 actually driven as a line, with a **Start** and an **End** marker, and the
 sidebar replaced by **Trip Detail** showing driver, route, status and times.
 This is the tool for answering "where did this bus actually go?".
+
+An active trip also has **End trip**. It ends the trip for good, the same as
+the driver ending it. Use it when a driver sees **You already have a trip
+running. End it before starting another.** and their phone no longer shows
+that trip. Confirm **End this trip? Do this only when the driver phone cannot
+end it.**, the page says **Trip ended. The driver can start a new trip.**, and
+the driver taps the run again. If a phone does still show the trip, ending it
+there is safe: on Android **End trip** finishes as usual, and on an iPhone
+**End locally anyway** is right when the app says **Could not end the trip**,
+because the server has already ended it.
 
 ### The feed itself
 
@@ -552,7 +590,7 @@ points are.
 | Symptom | Likely cause | What to do |
 |---|---|---|
 | Driver sees **You're not assigned to bus 4317.** after tapping a run on **Choose a run** | The vehicle is not assigned to that driver, or the assignment was removed. | **Users** → **Edit** the driver → **Assigned vehicles** → pick the vehicle → **Assign**. Then have them tap the run again. |
-| Driver sees **You already have a trip running. End it before starting another.** | An earlier trip was never ended, usually because it was started on another phone or the app was reinstalled. | Have the driver open the app on the phone that started the trip; it returns to the tracking screen for the old trip, where **End trip** ends it. Confirm on **Trips** → **Active** that it is gone. If the app no longer knows about the trip, ask your IT contact: there is no button in the admin UI to end another person's trip. |
+| Driver sees **You already have a trip running. End it before starting another.** | An earlier trip was never ended, usually because it was started on another phone or the app was reinstalled. | Have the driver open the app on the phone that started the trip; it returns to the tracking screen for the old trip, where **End trip** ends it. Confirm on **Trips** → **Active** that it is gone. If the app no longer knows about the trip, end it yourself: **Trips** → **Active** → **Apply**, then **End trip** on the driver's row and confirm. Then have them tap the run again. |
 | Driver sees **No buses are assigned to you** | No active vehicle is assigned to that account. | Check the vehicle is not deactivated (**Vehicles** → **Show deactivated**), then assign it (section 6) and have the driver tap **Check again**. |
 | One vehicle missing from the feed and the map, others fine | That phone has stopped reporting for longer than the staleness threshold: no signal, app closed, trip never started, phone battery dead, or Android killed the app in the background. | Ask the driver what the line under the status card says. **No connection** is a coverage problem and clears itself. If the app is not on the tracking screen at all, the trip was never started or was ended. If it keeps dying when the screen locks, the background-location permission is not **"Allow all the time"**: redo step 6 of section 7. |
 | Feed completely empty during service hours | Nothing is reporting, or the server lost its database. | Check **Dashboard**: if **Feed last updated** says **never** (nothing has reported for several minutes) and **Active Trips** is 0, it is the phones — start with two or three drivers. If **Active Trips** is healthy but nothing is in the feed, contact IT: see the monitoring checks in [`deployment.md` §9](deployment.md#9-monitoring). |

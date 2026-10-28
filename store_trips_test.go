@@ -426,6 +426,112 @@ func TestStore_EndTrip_AlreadyEnded(t *testing.T) {
 	assert.ErrorIs(t, err, ErrTripNotFound, "ending an already-completed trip should return not found")
 }
 
+// TestStore_EndTripByID_FreesLockedOutDriver is the lockout from #164: a
+// driver whose phone lost its trip cannot start another until something ends
+// the old one.
+func TestStore_EndTripByID_FreesLockedOutDriver(t *testing.T) {
+	store := newTestStore(t)
+	userID := setupTripTestData(t, store)
+	ctx := context.Background()
+
+	trip, err := store.StartTrip(ctx, userID, "bus-trip-1", "route-5", "gtfs-5")
+	require.NoError(t, err)
+	_, err = store.StartTrip(ctx, userID, "bus-trip-1", "route-5", "gtfs-5")
+	require.ErrorIs(t, err, ErrActiveTripExists, "precondition: the driver is locked out")
+
+	ended, err := store.EndTripByID(ctx, trip.ID)
+	require.NoError(t, err)
+	assert.Equal(t, trip.ID, ended.ID)
+	assert.Equal(t, "completed", ended.Status)
+	require.NotNil(t, ended.EndTime)
+	assert.WithinDuration(t, time.Now(), *ended.EndTime, time.Minute)
+	assert.Equal(t, userID, ended.UserID)
+	assert.Equal(t, "Trip Driver", ended.DriverName)
+	assert.Equal(t, "bus-trip-1", ended.VehicleID)
+	assert.Equal(t, "Bus 1", ended.VehicleLabel)
+
+	var status string
+	err = store.pool.QueryRow(ctx, "SELECT status FROM trips WHERE id = $1", trip.ID).Scan(&status)
+	require.NoError(t, err)
+	assert.Equal(t, "completed", status)
+
+	_, err = store.StartTrip(ctx, userID, "bus-trip-1", "route-5", "gtfs-5")
+	assert.NoError(t, err, "the driver must be able to start again once the trip is ended")
+}
+
+// TestStore_EndTripByID_EndsAnyDriversTrip verifies the admin end has no
+// driver check, which is what sets it apart from EndTrip, and that it ends
+// only the trip it names.
+func TestStore_EndTripByID_EndsAnyDriversTrip(t *testing.T) {
+	store := newTestStore(t)
+	driverA := setupTripTestData(t, store)
+	driverB := setupTripUser(t, store, "Other Driver", "other@test.com", "bus-trip-2", "Bus 2")
+	ctx := context.Background()
+
+	tripA, err := store.StartTrip(ctx, driverA, "bus-trip-1", "route-5", "")
+	require.NoError(t, err)
+	tripB, err := store.StartTrip(ctx, driverB, "bus-trip-2", "route-6", "")
+	require.NoError(t, err)
+
+	ended, err := store.EndTripByID(ctx, tripA.ID)
+	require.NoError(t, err)
+	assert.Equal(t, driverA, ended.UserID)
+	assert.Equal(t, "completed", ended.Status)
+
+	summaryB, err := store.GetTripSummary(ctx, tripB.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "active", summaryB.Status, "ending one trip must leave other drivers' trips running")
+}
+
+func TestStore_EndTripByID_NotFound(t *testing.T) {
+	store := newTestStore(t)
+	_ = setupTripTestData(t, store)
+
+	trip, err := store.EndTripByID(context.Background(), 99999999)
+	assert.ErrorIs(t, err, ErrTripNotFound)
+	assert.Nil(t, trip)
+}
+
+// TestStore_EndTripByID_AlreadyEnded verifies an ended trip is refused with
+// its own error and keeps the end_time it already had.
+func TestStore_EndTripByID_AlreadyEnded(t *testing.T) {
+	store := newTestStore(t)
+	userID := setupTripTestData(t, store)
+	ctx := context.Background()
+
+	trip, err := store.StartTrip(ctx, userID, "bus-trip-1", "route-5", "")
+	require.NoError(t, err)
+	// The driver ended it an hour ago.
+	endedAt := time.Now().Add(-time.Hour).Truncate(time.Microsecond)
+	_, err = store.pool.Exec(ctx, "UPDATE trips SET status = 'completed', end_time = $2 WHERE id = $1", trip.ID, endedAt)
+	require.NoError(t, err)
+
+	ended, err := store.EndTripByID(ctx, trip.ID)
+	assert.ErrorIs(t, err, ErrTripNotActive)
+	assert.Nil(t, ended)
+
+	var endAfter time.Time
+	err = store.pool.QueryRow(ctx, "SELECT end_time FROM trips WHERE id = $1", trip.ID).Scan(&endAfter)
+	require.NoError(t, err)
+	assert.True(t, endAfter.Equal(endedAt), "an ended trip's end_time must not be overwritten: got %v, want %v", endAfter, endedAt)
+}
+
+// TestStore_EndTripByID_Twice verifies a second end of the same trip, such as
+// two admins clicking at once, is refused rather than ending it again.
+func TestStore_EndTripByID_Twice(t *testing.T) {
+	store := newTestStore(t)
+	userID := setupTripTestData(t, store)
+	ctx := context.Background()
+
+	trip, err := store.StartTrip(ctx, userID, "bus-trip-1", "route-5", "")
+	require.NoError(t, err)
+
+	_, err = store.EndTripByID(ctx, trip.ID)
+	require.NoError(t, err)
+	_, err = store.EndTripByID(ctx, trip.ID)
+	assert.ErrorIs(t, err, ErrTripNotActive)
+}
+
 func TestStore_StartTrip_AfterEndingPrevious(t *testing.T) {
 	store := newTestStore(t)
 	userID := setupTripTestData(t, store)
@@ -528,4 +634,65 @@ func TestStore_EndTrip_UpdatedAtChanges(t *testing.T) {
 	err = store.pool.QueryRow(ctx, "SELECT updated_at FROM trips WHERE id = $1", trip.ID).Scan(&afterUpdated)
 	require.NoError(t, err)
 	assert.True(t, afterUpdated.After(beforeUpdated), "updated_at should advance after ending trip")
+}
+
+// TestStore_AuthorizeLocation walks the reported attack: a driver may
+// publish only for a vehicle they are assigned to, that is active, and that
+// they have an active trip on whose trip_id and route_id the report matches.
+func TestStore_AuthorizeLocation(t *testing.T) {
+	store := newTestStore(t)
+	clearTripTestData(t, store)
+	t.Cleanup(func() { clearTripTestData(t, store) })
+	ctx := context.Background()
+
+	driver2 := setupTripUser(t, store, "Driver Two", "driver2-auth@test.com", "bus-102", "Bus 102")
+	_, err := store.pool.Exec(ctx, "INSERT INTO vehicles (id, label) VALUES ('bus-101', 'Bus 101')")
+	require.NoError(t, err)
+	driverID := strconv.FormatInt(driver2, 10)
+	report := func(vehicleID, tripID, routeID string) *LocationReport {
+		return &LocationReport{DriverID: driverID, VehicleID: vehicleID, TripID: tripID, RouteID: routeID}
+	}
+
+	assert.ErrorIs(t, store.AuthorizeLocation(ctx, report("bus-101", "", "")), ErrNotAssigned, "vehicle assigned to someone else")
+	assert.ErrorIs(t, store.AuthorizeLocation(ctx, report("ghost-999", "", "")), ErrNotAssigned, "unknown vehicle")
+	assert.ErrorIs(t, store.AuthorizeLocation(ctx, &LocationReport{DriverID: "driver-1", VehicleID: "bus-102"}), ErrNotAssigned, "non-numeric subject")
+	assert.ErrorIs(t, store.AuthorizeLocation(ctx, report("bus-102", "", "")), ErrNoActiveTrip, "assigned but no trip")
+
+	trip, err := store.StartTrip(ctx, driver2, "bus-102", "route-1", "gtfs-1")
+	require.NoError(t, err)
+	assert.NoError(t, store.AuthorizeLocation(ctx, report("bus-102", "gtfs-1", "route-1")))
+	assert.NoError(t, store.AuthorizeLocation(ctx, report("bus-102", "", "")), "trip fields are optional")
+	assert.ErrorIs(t, store.AuthorizeLocation(ctx, report("bus-102", "FAKE-TRIP", "route-1")), ErrTripMismatch)
+	assert.ErrorIs(t, store.AuthorizeLocation(ctx, report("bus-102", "gtfs-1", "NOPE")), ErrTripMismatch)
+
+	require.NoError(t, store.DeactivateVehicle(ctx, "bus-102"))
+	assert.ErrorIs(t, store.AuthorizeLocation(ctx, report("bus-102", "", "")), ErrVehicleInactive)
+
+	_, err = store.pool.Exec(ctx, "UPDATE vehicles SET active = true WHERE id = 'bus-102'")
+	require.NoError(t, err)
+	require.NoError(t, store.EndTrip(ctx, trip.ID, driver2))
+	assert.ErrorIs(t, store.AuthorizeLocation(ctx, report("bus-102", "", "")), ErrNoActiveTrip, "trip ended")
+
+	var ghosts int
+	require.NoError(t, store.pool.QueryRow(ctx, "SELECT COUNT(*) FROM vehicles WHERE id = 'ghost-999'").Scan(&ghosts))
+	assert.Zero(t, ghosts, "authorizing must never create a vehicle")
+}
+
+// TestStore_GetRecentLocations_SkipsInactiveVehicles keeps a restart from
+// putting a deactivated vehicle back in the feed.
+func TestStore_GetRecentLocations_SkipsInactiveVehicles(t *testing.T) {
+	store := newTestStore(t)
+	clearTripTestData(t, store)
+	t.Cleanup(func() { clearTripTestData(t, store) })
+	ctx := context.Background()
+
+	for _, id := range []string{"bus-on", "bus-off"} {
+		require.NoError(t, store.SaveLocation(ctx, &LocationReport{VehicleID: id, Latitude: 1, Longitude: 2, Timestamp: time.Now().Unix()}))
+	}
+	require.NoError(t, store.DeactivateVehicle(ctx, "bus-off"))
+
+	locs, err := store.GetRecentLocations(ctx, time.Now().Add(-time.Minute))
+	require.NoError(t, err)
+	require.Len(t, locs, 1)
+	assert.Equal(t, "bus-on", locs[0].VehicleID)
 }
